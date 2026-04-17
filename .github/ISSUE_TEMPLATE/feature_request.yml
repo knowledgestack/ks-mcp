@@ -1,0 +1,33 @@
+name: ✨ Feature request
+description: Request a new tool, transport feature, or integration.
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do? Why doesn't the current tool set support it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What tool, argument, or behavior would solve this?
+    validations:
+      required: true
+  - type: checkboxes
+    id: write-surface
+    attributes:
+      label: Is this a write operation?
+      description: v1 is intentionally read-only. Write tools require a security review and are a bigger decision.
+      options:
+        - label: This is a read-only tool or enhancement.
+        - label: This would require write access — I understand the scope trade-off.
+  - type: checkboxes
+    id: willingness
+    attributes:
+      label: Are you willing to contribute?
+      options:
+        - label: I'll send a PR — please assign it to me.

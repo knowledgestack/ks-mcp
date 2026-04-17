@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🎮 Discord — fastest help
+    url: https://discord.gg/McHmxUeS
+    about: Live architecture + implementation questions.
+  - name: 💬 ks-cookbook Discussions
+    url: https://github.com/knowledgestack/ks-cookbook/discussions
+    about: Long-form questions, ideas, and showcase posts.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/knowledgestack/ks-mcp/security/advisories/new
+    about: Found a security issue? Report privately instead of opening a public issue.
+  - name: 📖 ks-cookbook wiki
+    url: https://github.com/knowledgestack/ks-cookbook/wiki
+    about: Concepts, production hardening, MCP tool reference.

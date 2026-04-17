@@ -1,0 +1,52 @@
+name: 🐛 Bug report
+description: Something broke in the MCP server or one of its tools.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Affected tool or component
+      placeholder: "search_knowledge  /  read  /  transport / auth / general"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      placeholder: "Expected X, got Y. Include the JSON-RPC request/response if you captured it."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      render: bash
+      placeholder: |
+        uvx knowledgestack-mcp --http --port 8765
+        # then: call tool X with args Y
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: knowledgestack-mcp version
+      placeholder: "pip show knowledgestack-mcp | grep Version"
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options: ["stdio", "Streamable HTTP"]
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've searched existing issues.
+          required: true
+        - label: I've redacted API keys and PII from logs.
+          required: true
