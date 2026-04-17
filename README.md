@@ -1,6 +1,19 @@
 # `knowledgestack-mcp`
 
-An MCP server that exposes **Knowledge Stack** read-side tools (semantic search, keyword search, document reading, image retrieval) to any agent framework — **pydantic-ai**, **LangGraph**, **OpenAI Agents SDK**, **Claude Desktop**, **Cursor**.
+> **Focus on agents. We handle document intelligence.**
+>
+> An MCP server exposing Knowledge Stack's read-side tools (semantic search, keyword search, document reading, image retrieval) to any agent framework — **pydantic-ai**, **LangChain / LangGraph**, **CrewAI**, **Temporal**, **OpenAI Agents SDK**, **Claude Desktop**, **Cursor**.
+
+[![PyPI](https://img.shields.io/pypi/v/knowledgestack-mcp)](https://pypi.org/project/knowledgestack-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/McHmxUeS)
+
+## Related repos
+
+- **[ks-cookbook](https://github.com/knowledgestack/ks-cookbook)** — 32 production-style agent flagships using this server.
+- **[ks-sdk-python](https://github.com/knowledgestack/ks-sdk-python)** — Python SDK (`ksapi` on PyPI) for admin / write operations.
+- **[ks-sdk-ts](https://github.com/knowledgestack/ks-sdk-ts)** — TypeScript SDK (`@knowledge-stack/ksapi` on npm).
+- **[ks-docs](https://github.com/knowledgestack/ks-docs)** — central developer docs (Mintlify → docs.knowledgestack.ai).
 
 ## Install
 
