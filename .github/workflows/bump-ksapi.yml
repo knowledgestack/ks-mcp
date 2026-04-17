@@ -1,0 +1,78 @@
+name: Bump ksapi on SDK release
+
+on:
+  repository_dispatch:
+    types: [sdk-release]
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "ksapi version to pin (e.g. 1.68.0). Leave empty for latest on PyPI."
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Resolve target ksapi version
+        id: target
+        run: |
+          dispatch_tag="${{ github.event.client_payload.tag }}"
+          manual_tag="${{ inputs.target_version }}"
+          target="${dispatch_tag:-$manual_tag}"
+          if [ -z "$target" ]; then
+            target=$(curl -s https://pypi.org/pypi/ksapi/json | python3 -c "import json,sys;print(json.load(sys.stdin)['info']['version'])")
+          fi
+          # Strip leading 'v' if the dispatch sent something like "v1.68.0"
+          target="${target#v}"
+          echo "version=$target" >> "$GITHUB_OUTPUT"
+          echo "Bumping ksapi to $target"
+
+      - name: Update pyproject.toml pin and relock
+        env:
+          TARGET: ${{ steps.target.outputs.version }}
+        run: |
+          python3 - <<PY
+          import re, pathlib
+          p = pathlib.Path("pyproject.toml")
+          s = p.read_text()
+          s = re.sub(r'("ksapi(?:\[[^\]]*\])?)[^"]*"', rf'\g<1>>={"$TARGET"}"', s)
+          p.write_text(s)
+          PY
+          uv lock
+
+      - name: Exit early if no change
+        id: diff
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(deps): bump ksapi to ${{ steps.target.outputs.version }}"
+          branch: ci/bump-ksapi-${{ steps.target.outputs.version }}
+          title: "chore(deps): bump ksapi to ${{ steps.target.outputs.version }}"
+          body: |
+            Auto-generated after a Knowledge Stack SDK release.
+
+            - Upstream tag: `${{ github.event.client_payload.tag || inputs.target_version || 'latest' }}`
+            - Updates `ksapi` pin in `pyproject.toml` to `>=${{ steps.target.outputs.version }}`
+            - Relocks `uv.lock`
+
+            CI will validate the bump doesn't break the MCP server's tests.
+          labels: |
+            dependencies
+            automated
