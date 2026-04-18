@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/registry/main/docs/server-json/server.schema.json",
+  "name": "io.github.knowledgestack/ks-mcp",
+  "description": "Knowledge Stack MCP server — semantic + keyword search, document reading, image retrieval, and path browsing over a tenant-scoped knowledge base.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/knowledgestack/ks-mcp",
+    "source": "github"
+  },
+  "homepage": "https://knowledgestack.ai",
+  "license": "MIT",
+  "keywords": ["rag", "knowledge-base", "search", "agents", "retrieval"],
+  "packages": [
+    {
+      "registry_name": "pypi",
+      "name": "knowledgestack-mcp",
+      "version": "0.1.0",
+      "runtime_hint": "uvx",
+      "transport": { "type": "stdio" },
+      "environment_variables": [
+        {
+          "name": "KS_API_KEY",
+          "description": "Knowledge Stack user API key (sk-user-…).",
+          "required": true,
+          "is_secret": true
+        },
+        {
+          "name": "KS_BASE_URL",
+          "description": "Override the KS API host. Defaults to https://api.knowledgestack.ai.",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "transport_type": "streamable-http",
+      "url": "https://mcp.knowledgestack.ai"
+    }
+  ]
+}

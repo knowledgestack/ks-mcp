@@ -2,49 +2,121 @@
 
 > **Focus on agents. We handle document intelligence.**
 >
-> An MCP server exposing Knowledge Stack's read-side tools (semantic search, keyword search, document reading, image retrieval) to any agent framework — **pydantic-ai**, **LangChain / LangGraph**, **CrewAI**, **Temporal**, **OpenAI Agents SDK**, **Claude Desktop**, **Cursor**.
+> A batteries-included [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Knowledge Stack's read-side tools — semantic search, keyword search, document reading, image retrieval, path browsing — to any MCP-compatible client.
+>
+> Works with **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**, **Zed**, **VS Code (Continue)**, **pydantic-ai**, **LangChain / LangGraph**, **CrewAI**, **Temporal**, the **OpenAI Agents SDK**, and anything else that speaks MCP stdio or Streamable HTTP.
 
 [![PyPI](https://img.shields.io/pypi/v/knowledgestack-mcp)](https://pypi.org/project/knowledgestack-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/knowledgestack-mcp)](https://pypi.org/project/knowledgestack-mcp/)
+[![CI](https://github.com/knowledgestack/ks-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/knowledgestack/ks-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/McHmxUeS)
+[![MCP](https://img.shields.io/badge/MCP-1.2+-8A2BE2)](https://modelcontextprotocol.io)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/McHmxUeS)
 
-## Related repos
+---
 
-- **[ks-cookbook](https://github.com/knowledgestack/ks-cookbook)** — 32 production-style agent flagships using this server.
-- **[ks-sdk-python](https://github.com/knowledgestack/ks-sdk-python)** — Python SDK (`ksapi` on PyPI) for admin / write operations.
-- **[ks-sdk-ts](https://github.com/knowledgestack/ks-sdk-ts)** — TypeScript SDK (`@knowledge-stack/ksapi` on npm).
-- **[ks-docs](https://github.com/knowledgestack/ks-docs)** — central developer docs (Mintlify → docs.knowledgestack.ai).
+## Table of contents
+
+- [Why ks-mcp](#why-ks-mcp)
+- [How it fits](#how-it-fits)
+- [Install](#install)
+- [Configure](#configure)
+- [Run](#run)
+- [Client setup](#client-setup)
+  - [Claude Desktop](#claude-desktop)
+  - [Claude Code](#claude-code)
+  - [Cursor](#cursor)
+  - [VS Code (Continue)](#vs-code-continue)
+  - [pydantic-ai](#pydantic-ai)
+  - [LangGraph](#langgraph)
+  - [OpenAI Agents SDK](#openai-agents-sdk)
+- [Tools (v1 — read-only)](#tools-v1--read-only)
+- [Transports](#transports)
+- [Security model](#security-model)
+- [Diagnostics](#diagnostics)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [Related repos](#related-repos)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why ks-mcp
+
+Most agent frameworks ship their own "retrieval toolbox" the moment you need to ground a model in real documents. That quickly becomes:
+
+- one RAG implementation per framework,
+- one set of auth headers per environment,
+- and one slightly-different search API per team.
+
+`ks-mcp` collapses all of that into a single, portable MCP server. Point any MCP client at it and you get the same high-quality, tenant-scoped tools — semantic search, BM25, structured reading, image retrieval, path browsing, citations — regardless of which agent framework you use this week.
+
+**Key properties:**
+
+- **Read-only by design.** v1 deliberately exposes no mutating tools. Safe to connect to production knowledge bases.
+- **Tenant-scoped.** Every call is authenticated with a per-user API key; nothing crosses tenant boundaries.
+- **Grounded.** Every search result and `read` payload returns stable chunk IDs + path parts you can cite.
+- **Two transports.** Local stdio for desktop agents; Streamable HTTP for remote / multi-agent deployments.
+- **Typed.** Built on `mcp>=1.2` + `pydantic>=2.6`. All tool arguments/results are schema-validated.
+
+## How it fits
+
+```
+┌──────────────────────┐         ┌──────────────────────┐        ┌─────────────────────┐
+│  Agent / IDE client  │  MCP    │     ks-mcp           │  HTTPS │  Knowledge Stack    │
+│  (Claude, Cursor,    │ ──────► │  (this repo)         │ ─────► │  API  + vector DB   │
+│   LangGraph, …)      │  stdio  │  tools: search, read │        │  + object store     │
+└──────────────────────┘  / HTTP └──────────────────────┘        └─────────────────────┘
+```
+
+The server is a thin, audited façade over the Knowledge Stack REST API (`ksapi`). No retrieval logic lives here — we only translate MCP tool calls into typed HTTP calls and project the response into MCP content blocks (text, JSON, image).
 
 ## Install
 
 ```bash
-uvx knowledgestack-mcp           # run without installing (stdio)
-# or
+# run without installing (recommended for end users)
+uvx knowledgestack-mcp
+
+# or install into an environment
 pip install knowledgestack-mcp
+# or
+uv pip install knowledgestack-mcp
 ```
+
+Requires Python **3.11+**.
 
 ## Configure
 
-Export a KS API key (issued from the dashboard — see the [cookbook quickstart](../README.md)):
+Export a Knowledge Stack API key (issued from the dashboard — see the [cookbook quickstart](https://github.com/knowledgestack/ks-cookbook)):
+
+| Variable       | Required | Default                             | Notes                                                       |
+| -------------- | -------- | ----------------------------------- | ----------------------------------------------------------- |
+| `KS_API_KEY`   | yes      | —                                   | A `sk-user-…` key scoped to a single tenant user.           |
+| `KS_BASE_URL`  | no       | `https://api.knowledgestack.ai`     | Point at staging or a self-hosted deployment.               |
+| `KS_TIMEOUT_S` | no       | `30`                                | HTTP timeout for upstream calls.                            |
+| `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG` prints tool I/O to stderr (never stdout).           |
 
 ```bash
 export KS_API_KEY="sk-user-..."
-export KS_BASE_URL="https://api.knowledgestack.ai"   # optional; defaults to prod
+export KS_BASE_URL="https://api.knowledgestack.ai"  # optional
 ```
 
 ## Run
 
 ```bash
-# stdio (Claude Desktop, Cursor, pydantic-ai, LangGraph)
+# stdio — the right choice for Claude Desktop, Cursor, pydantic-ai, LangGraph
 uvx knowledgestack-mcp
 
-# Streamable HTTP
-uvx knowledgestack-mcp --http --port 8765
+# Streamable HTTP — remote agents, ngrok tunnels, container deployments
+uvx knowledgestack-mcp --http --host 0.0.0.0 --port 8765
 ```
 
-## Claude Desktop
+## Client setup
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+### Claude Desktop
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -58,31 +130,178 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
+### Claude Code
+
+```bash
+claude mcp add knowledgestack -- uvx knowledgestack-mcp
+# then set the key in your shell or in ~/.claude/settings.json env
+```
+
+### Cursor
+
+`~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "knowledgestack": {
+      "command": "uvx",
+      "args": ["knowledgestack-mcp"],
+      "env": { "KS_API_KEY": "sk-user-..." }
+    }
+  }
+}
+```
+
+### VS Code (Continue)
+
+```yaml
+# ~/.continue/config.yaml
+mcpServers:
+  - name: knowledgestack
+    command: uvx
+    args: ["knowledgestack-mcp"]
+    env:
+      KS_API_KEY: "sk-user-..."
+```
+
+### pydantic-ai
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStdio
+
+ks = MCPServerStdio("uvx", ["knowledgestack-mcp"])
+agent = Agent("openai:gpt-4.1", mcp_servers=[ks])
+
+async with agent.run_mcp_servers():
+    result = await agent.run("Summarize the onboarding handbook with citations.")
+    print(result.output)
+```
+
+### LangGraph
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "knowledgestack": {
+        "command": "uvx",
+        "args": ["knowledgestack-mcp"],
+        "transport": "stdio",
+    }
+})
+tools = await client.get_tools()
+```
+
+### OpenAI Agents SDK
+
+```python
+from agents import Agent
+from agents.mcp import MCPServerStdio
+
+server = MCPServerStdio(params={"command": "uvx", "args": ["knowledgestack-mcp"]})
+agent = Agent(name="Research", mcp_servers=[server])
+```
+
 ## Tools (v1 — read-only)
 
 | Tool | Description |
-|---|---|
-| `search_knowledge` | Semantic (dense-vector) chunk search. |
-| `search_keyword` | BM25 chunk search. |
-| `read` | Read a folder / document / section / chunk. |
-| `read_around` | Fetch chunks before + after an anchor. |
-| `list_contents` | List children of a folder. |
-| `find` | Fuzzy-match a path-part by name. |
-| `get_info` | Path-part metadata + ancestry breadcrumb. |
-| `view_chunk_image` | Download an IMAGE-chunk as MCP image content. |
+| --- | --- |
+| `search_knowledge` | Semantic (dense-vector) chunk search over the tenant corpus. |
+| `search_keyword` | BM25 chunk search for exact terminology and identifiers. |
+| `read` | Read a folder / document / section / chunk by path or ID. |
+| `read_around` | Fetch the N chunks before and after an anchor chunk for context expansion. |
+| `list_contents` | List children of a folder (like `ls`). |
+| `find` | Fuzzy-match a path-part by name when you don't know the exact path. |
+| `get_info` | Path-part metadata + ancestry breadcrumb, for citations. |
+| `view_chunk_image` | Download an IMAGE chunk and return it as MCP image content. |
 | `get_organization_info` | Tenant name, language, timezone. |
-| `get_current_datetime` | UTC + tenant-local datetime. |
+| `get_current_datetime` | UTC + tenant-local datetime (handy for relative queries). |
 
-Writes (ingest/delete/generate) are intentionally not exposed in v1.
+Writes (ingest / delete / generate) are intentionally **not** exposed in v1. See the [Roadmap](#roadmap) for the plan around admin-scoped write tools.
+
+## Transports
+
+| Transport          | When to use                                                     | Command                                |
+| ------------------ | --------------------------------------------------------------- | -------------------------------------- |
+| `stdio`            | Desktop IDE clients, local agents, CI fixtures                  | `uvx knowledgestack-mcp`               |
+| `streamable-http`  | Hosted agents, multi-tenant gateways, ngrok / Cloud Run / Fly   | `uvx knowledgestack-mcp --http`        |
+
+Both transports speak the same tool surface.
+
+## Security model
+
+- The server never logs `KS_API_KEY` or full request bodies at `INFO`.
+- All tool responses are schema-validated via Pydantic before being returned to the client.
+- Tenant isolation is enforced **upstream** by the Knowledge Stack API; the server is a pass-through with no cross-tenant cache.
+- Report vulnerabilities privately via [SECURITY.md](SECURITY.md).
 
 ## Diagnostics
 
-Click through every tool with a real API key:
+Click through every tool with a real API key using the official inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector uvx knowledgestack-mcp
 ```
 
+Enable verbose tool tracing (prints to stderr, safe for stdio):
+
+```bash
+KS_LOG_LEVEL=DEBUG uvx knowledgestack-mcp
+```
+
+## Development
+
+```bash
+git clone https://github.com/knowledgestack/ks-mcp
+cd ks-mcp
+uv sync --extra dev
+uv run pytest
+uv run ruff check .
+uv run pyright
+```
+
+Layout:
+
+```
+src/ks_mcp/
+├── server.py         # FastMCP entrypoint + CLI
+├── client.py         # httpx/ksapi wrapper
+├── schema.py         # pydantic IO models
+├── errors.py         # typed error mapping
+└── tools/
+    ├── search.py     # search_knowledge, search_keyword
+    ├── read.py       # read, read_around
+    ├── browse.py     # list_contents, find, get_info, view_chunk_image
+    └── org.py        # get_organization_info, get_current_datetime
+```
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/knowledgestack/ks-mcp/issues) for everything on deck. Highlights for the next few releases:
+
+- **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, prompt library.
+- **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
+- **v0.4** — hosted Streamable HTTP deployment guide (Fly.io, Cloud Run, Modal), per-tool rate limits.
+- **v0.5** — hybrid search (dense + BM25 fusion) tool, and a `summarize_document` convenience tool.
+- **v1.0** — stable tool surface, semver guarantees, registry listing on [github.com/mcp](https://github.com/mcp).
+
+Want to influence it? Thumbs-up the issues you care about, or open a [feature request](https://github.com/knowledgestack/ks-mcp/issues/new?template=feature_request.yml).
+
+## Related repos
+
+- **[ks-cookbook](https://github.com/knowledgestack/ks-cookbook)** — 32 production-style agent flagships built on this server.
+- **[ks-sdk-python](https://github.com/knowledgestack/ks-sdk-python)** — Python SDK (`ksapi` on PyPI) for admin / write operations.
+- **[ks-sdk-ts](https://github.com/knowledgestack/ks-sdk-ts)** — TypeScript SDK (`@knowledge-stack/ksapi` on npm).
+- **[ks-docs](https://github.com/knowledgestack/ks-docs)** — central developer docs (Mintlify → docs.knowledgestack.ai).
+
+## Contributing
+
+Issues and PRs welcome. Please read [SECURITY.md](SECURITY.md) before reporting anything sensitive, and open a discussion first for large feature proposals so we can align on shape before you write code.
+
+Development happens in the open on `main`; feature branches land via PR with CI (pytest + ruff + pyright) required to pass.
+
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
