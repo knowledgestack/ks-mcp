@@ -18,7 +18,7 @@ import argparse
 
 from mcp.server.fastmcp import FastMCP
 
-from ks_mcp.tools import browse, org, read, search
+from ks_mcp.tools import browse, org, provenance, read, search
 
 
 def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
@@ -32,7 +32,7 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
         host=host,
         port=port,
     )
-    for module in (search, read, browse, org):
+    for module in (search, read, browse, org, provenance):
         module.register(mcp)
     return mcp
 

@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.knowledgestack/ks-mcp -->
+
 # `knowledgestack-mcp`
 
 > **Focus on agents. We handle document intelligence.**
@@ -204,7 +206,9 @@ server = MCPServerStdio(params={"command": "uvx", "args": ["knowledgestack-mcp"]
 agent = Agent(name="Research", mcp_servers=[server])
 ```
 
-## Tools (v1 — read-only)
+## Tools
+
+### Phase 1 — retrieval (v0.1, shipped)
 
 | Tool | Description |
 | --- | --- |
@@ -219,7 +223,24 @@ agent = Agent(name="Research", mcp_servers=[server])
 | `get_organization_info` | Tenant name, language, timezone. |
 | `get_current_datetime` | UTC + tenant-local datetime (handy for relative queries). |
 
-Writes (ingest / delete / generate) are intentionally **not** exposed in v1. See the [Roadmap](#roadmap) for the plan around admin-scoped write tools.
+### Phase 2 — provenance & explanation (in progress)
+
+| Tool | Description | Status |
+| --- | --- | --- |
+| `trace_chunk_lineage` | Return the lineage graph (merge / split / re-embed / re-ingest) for a chunk. | ✅ v0.2 |
+| `compare_versions` | Unified diff between two versions of the same document. | ✅ v0.2 |
+| `explain_answer_sources` | Given a generated answer, return the chunks + lineage that grounded it. | 🟡 backend-dependent |
+| `verify_document_consistency` | Cross-check a document's sections for internal contradiction. | 🟡 backend-dependent |
+
+### Phase 3 — workflows & audit (planned)
+
+| Tool | Description | Status |
+| --- | --- | --- |
+| `run_document_workflow` | Kick off a Temporal workflow (re-embed, reclassify, translate, …) scoped to a version. | ⚪ v0.3 |
+| `validate_contract_fields` | Check required fields exist and match types against a contract schema. | ⚪ v0.3 |
+| `audit_cross_document_contradictions` | Find contradictions across a folder subtree. | ⚪ v0.4 |
+
+Writes (ingest / delete / generate) are intentionally **not** exposed in Phase 1 or 2. See the [Roadmap](#roadmap) for the plan around admin-scoped write tools.
 
 ## Transports
 
