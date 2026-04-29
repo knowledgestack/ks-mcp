@@ -43,6 +43,6 @@ flowchart LR
 
 ## External
 
-- [GitHub repo](https://github.com/knowledgestack/ks-mcp) · [Issues](https://github.com/knowledgestack/ks-mcp/issues) · [Discussions](https://github.com/knowledgestack/ks-mcp/discussions) · [Discord](https://discord.gg/McHmxUeS)
+- [GitHub repo](https://github.com/knowledgestack/ks-mcp) · [Issues](https://github.com/knowledgestack/ks-mcp/issues) · [Discord](https://discord.gg/McHmxUeS)
 - [`ks-cookbook`](https://github.com/knowledgestack/ks-cookbook) — production-style agent recipes
 - [`ks-docs`](https://github.com/knowledgestack/ks-docs) — central product docs (Mintlify → docs.knowledgestack.ai)

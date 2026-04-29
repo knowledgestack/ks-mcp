@@ -105,7 +105,21 @@ Network is **never** hit by `pytest`. `respx` is available for hand-rolled HTTP 
 
 - `main` is always green. Open feature branches off `main`, name them `feat/...`, `fix/...`, `chore/...`, `docs/...`.
 - Conventional commits: `feat(tools): ...`, `fix(read): ...`, `docs(wiki): ...`. CI status checks must pass before merge.
-- Wiki source lives under `wiki/` in this repo. Edit there, then run the sync command in [`wiki/README.md`](https://github.com/knowledgestack/ks-mcp/blob/main/wiki/README.md) (or wait for the future `wiki-sync.yml` workflow) to publish to the live wiki.
+- Wiki source lives under `wiki/` in the main repo (so changes are reviewable in PRs). To republish here after editing:
+
+  ```bash
+  # one-time: clone the wiki repo next to the main repo
+  git clone https://github.com/knowledgestack/ks-mcp.wiki.git ks-mcp.wiki
+
+  # whenever wiki/ changes:
+  cp ks-mcp/wiki/*.md ks-mcp.wiki/
+  cd ks-mcp.wiki
+  # don't push the source-folder doc itself
+  rm -f README.md
+  git add -A && git commit -m "docs(wiki): sync from main repo" && git push
+  ```
+
+  A future `.github/workflows/wiki-sync.yml` will automate this.
 
 ## Releasing
 
