@@ -18,28 +18,28 @@ flowchart LR
   G --> K[Diagnostics]
   L[Contributing?] --> M[Development]
 
-  click B "Client-Setup"
-  click C "Architecture"
-  click E "Tools"
-  click F "Cookbook-Recipes"
-  click H "Configuration"
-  click I "Transports"
-  click J "Security"
-  click K "Diagnostics"
-  click M "Development"
+  click B "https://github.com/knowledgestack/ks-mcp/wiki/Client-Setup"
+  click C "https://github.com/knowledgestack/ks-mcp/wiki/Architecture"
+  click E "https://github.com/knowledgestack/ks-mcp/wiki/Tools"
+  click F "https://github.com/knowledgestack/ks-mcp/wiki/Cookbook-Recipes"
+  click H "https://github.com/knowledgestack/ks-mcp/wiki/Configuration"
+  click I "https://github.com/knowledgestack/ks-mcp/wiki/Transports"
+  click J "https://github.com/knowledgestack/ks-mcp/wiki/Security"
+  click K "https://github.com/knowledgestack/ks-mcp/wiki/Diagnostics"
+  click M "https://github.com/knowledgestack/ks-mcp/wiki/Development"
 ```
 
 ## Pages
 
-- **[Client setup](Client-Setup)** — Claude Desktop, Claude Code, Cursor, Windsurf, Zed, VS Code (Continue), pydantic-ai, LangGraph, CrewAI, OpenAI Agents SDK, Temporal.
-- **[Architecture](Architecture)** — system diagram, dual paths to a grounded answer, identifier model, internals.
-- **[Tools reference](Tools)** — every Phase 1 / 2 / 3 tool with inputs, outputs, and recommended pairings.
-- **[Configuration](Configuration)** — environment variables, CLI flags, defaults.
-- **[Transports](Transports)** — stdio vs Streamable HTTP, deployment patterns.
-- **[Security model](Security)** — auth, tenant isolation, what is logged, vuln reporting.
-- **[Diagnostics](Diagnostics)** — MCP inspector, debug logging, error catalogue.
-- **[Development](Development)** — local setup, tests, contribution workflow.
-- **[Cookbook recipes](Cookbook-Recipes)** — guided index of `ks-cookbook` examples by domain.
+- **[Client setup](https://github.com/knowledgestack/ks-mcp/wiki/Client-Setup)** — Claude Desktop, Claude Code, Cursor, Windsurf, Zed, VS Code (Continue), pydantic-ai, LangGraph, CrewAI, OpenAI Agents SDK, Temporal.
+- **[Architecture](https://github.com/knowledgestack/ks-mcp/wiki/Architecture)** — system diagram, dual paths to a grounded answer, identifier model, internals.
+- **[Tools reference](https://github.com/knowledgestack/ks-mcp/wiki/Tools)** — every Phase 1 / 2 / 3 tool with inputs, outputs, and recommended pairings.
+- **[Configuration](https://github.com/knowledgestack/ks-mcp/wiki/Configuration)** — environment variables, CLI flags, defaults.
+- **[Transports](https://github.com/knowledgestack/ks-mcp/wiki/Transports)** — stdio vs Streamable HTTP, deployment patterns.
+- **[Security model](https://github.com/knowledgestack/ks-mcp/wiki/Security)** — auth, tenant isolation, what is logged, vuln reporting.
+- **[Diagnostics](https://github.com/knowledgestack/ks-mcp/wiki/Diagnostics)** — MCP inspector, debug logging, error catalogue.
+- **[Development](https://github.com/knowledgestack/ks-mcp/wiki/Development)** — local setup, tests, contribution workflow.
+- **[Cookbook recipes](https://github.com/knowledgestack/ks-mcp/wiki/Cookbook-Recipes)** — guided index of `ks-cookbook` examples by domain.
 
 ## External
 

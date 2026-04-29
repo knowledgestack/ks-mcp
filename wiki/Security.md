@@ -44,7 +44,7 @@ sequenceDiagram
 
 - Each `sk-user-…` key is scoped to **one tenant**. Cross-tenant access is rejected upstream.
 - `ks-mcp` does not maintain a cross-tenant cache. The `ApiClient` is per process; each process holds exactly one key.
-- For multi-tenant deployments, use **one process per tenant** (see [Configuration → tenant scoping](Configuration#tenant-scoping)).
+- For multi-tenant deployments, use **one process per tenant** (see [Configuration → tenant scoping](https://github.com/knowledgestack/ks-mcp/wiki/Configuration#tenant-scoping)).
 
 ## What is logged
 

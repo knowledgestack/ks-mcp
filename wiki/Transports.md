@@ -92,4 +92,4 @@ Long-running agent activities should attach via Streamable HTTP to a stable `ks-
 | HTTP transport hangs | Load balancer eating SSE; lower idle keepalive or use long-poll mode. |
 | Multiple calls return 401 | API key revoked / rotated; the cached `ApiClient` is per process — restart `ks-mcp`. |
 
-See [Diagnostics](Diagnostics) for deeper debugging.
+See [Diagnostics](https://github.com/knowledgestack/ks-mcp/wiki/Diagnostics) for deeper debugging.

@@ -61,7 +61,7 @@ Anything not on the CLI falls back to the environment, then to the built-in defa
 | Claude Code | shell export, or `env` in `~/.claude/settings.json` |
 | pydantic-ai · LangGraph · CrewAI · OpenAI Agents | the host process's environment |
 
-See [Client setup](Client-Setup) for full snippets per client.
+See [Client setup](https://github.com/knowledgestack/ks-mcp/wiki/Client-Setup) for full snippets per client.
 
 ## Tenant scoping
 

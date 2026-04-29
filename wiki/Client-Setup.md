@@ -28,7 +28,7 @@ flowchart LR
   http -- "uvx knowledgestack-mcp --http" --> KS
 ```
 
-> **Common prerequisite:** export `KS_API_KEY="sk-user-…"` before launching, or pass it via the client's `env` block. See [Configuration](Configuration) for every var.
+> **Common prerequisite:** export `KS_API_KEY="sk-user-…"` before launching, or pass it via the client's `env` block. See [Configuration](https://github.com/knowledgestack/ks-mcp/wiki/Configuration) for every var.
 
 ---
 
@@ -201,4 +201,4 @@ After wiring up any client, sanity-check by asking the agent:
 
 You should see calls to `list_contents` and `get_organization_info`. If the client reports "tool not found", restart it after editing config — most clients only reload MCP servers on launch.
 
-For deeper troubleshooting see **[Diagnostics](Diagnostics)**.
+For deeper troubleshooting see **[Diagnostics](https://github.com/knowledgestack/ks-mcp/wiki/Diagnostics)**.

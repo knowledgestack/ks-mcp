@@ -75,4 +75,4 @@ flowchart TB
 
 - Bugs / unexpected behaviour: [open an issue](https://github.com/knowledgestack/ks-mcp/issues/new?template=bug_report.yml).
 - Feature requests: [feature template](https://github.com/knowledgestack/ks-mcp/issues/new?template=feature_request.yml).
-- Vulnerabilities: see [Security](Security) — report privately, never in public issues.
+- Vulnerabilities: see [Security](https://github.com/knowledgestack/ks-mcp/wiki/Security) — report privately, never in public issues.
