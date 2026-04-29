@@ -1,6 +1,5 @@
 """Folder-tree navigation: list children, fuzzy-find by name, introspect a node."""
 
-
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -17,9 +16,7 @@ from ks_mcp.schema import PathPartAncestry, PathPartInfo
 
 def _pp_info(pp: Any) -> PathPartInfo | None:
     inner = getattr(pp, "actual_instance", None) or pp
-    path_part_id = (
-        getattr(inner, "path_part_id", None) or getattr(inner, "id", None)
-    )
+    path_part_id = getattr(inner, "path_part_id", None) or getattr(inner, "id", None)
     if path_part_id is None:
         return None
     return PathPartInfo(
@@ -30,9 +27,9 @@ def _pp_info(pp: Any) -> PathPartInfo | None:
     )
 
 
-def _filter_pp_infos(items: list[Any]) -> list[PathPartInfo]:
+def _filter_pp_infos(items: Any) -> list[PathPartInfo]:
     out: list[PathPartInfo] = []
-    for i in items:
+    for i in items or []:
         info = _pp_info(i)
         if info is not None:
             out.append(info)
@@ -54,7 +51,10 @@ def _resolve_folder_id(client: Any, folder_id: UUID) -> UUID:
             return folder_id
         raise rest_to_mcp(exc) from exc
 
-    if str(getattr(pp, "part_type", "")) != "FOLDER":
+    part_type = str(getattr(pp, "part_type", ""))
+    if part_type.startswith("PartType."):
+        part_type = part_type.removeprefix("PartType.")
+    if part_type != "FOLDER":
         return folder_id
 
     metadata_obj_id = getattr(pp, "metadata_obj_id", None)
@@ -66,13 +66,22 @@ def register(mcp: FastMCP) -> None:
     def list_contents(
         folder_id: Annotated[
             UUID | None,
-            Field(description="Folder PDO id. Omit to list root-level folders in the tenant."),
+            Field(
+                description=(
+                    "Folder PDO id (or its path_part_id — both are accepted). "
+                    "Omit to list root-level folders in the tenant."
+                ),
+            ),
         ] = None,
     ) -> list[PathPartInfo]:
-        """List the immediate children of a folder.
+        """List the immediate children of a folder, like ``ls``.
 
         Pass no argument to list root-level folders. Returns one entry per
-        child (folder or document) with its path-part id, name, and type.
+        child (folder or document) with its ``path_part_id``, ``name``,
+        ``part_type``, and ``materialized_path``. If a stale / unknown
+        ``folder_id`` is supplied, the tool falls back to listing the tenant
+        root rather than failing — agents discovering the corpus get a useful
+        result instead of a dead-end 404.
         """
         client = get_api_client()
         folders = FoldersApi(client)
@@ -95,22 +104,30 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def find(
-        query: Annotated[str, Field(description="Fuzzy substring of the path-part's name.", min_length=1, max_length=255)],
+        query: Annotated[
+            str,
+            Field(
+                description="Fuzzy substring of the path-part's name.", min_length=1, max_length=255
+            ),
+        ],
         parent_path_part_id: Annotated[
             UUID | None,
-            Field(description="Restrict search to descendants of this folder. Omit for whole tenant."),
+            Field(
+                description="Restrict search to descendants of this folder. Omit for whole tenant."
+            ),
         ] = None,
     ) -> list[PathPartInfo]:
         """Fuzzy-search path-parts (folders, documents, sections) by name.
 
-        Use when the user refers to a document by a remembered title fragment.
+        Use when the user refers to a document by a remembered title fragment
+        ("the onboarding handbook", "Q3 forecast"). For matching the *body* of
+        a document, use ``search_keyword`` instead — ``find`` only looks at
+        names.
         """
         client = get_api_client()
         folders = FoldersApi(client)
         try:
-            result = folders.search_items(
-                name_like=query, parent_path_part_id=parent_path_part_id
-            )
+            result = folders.search_items(name_like=query, parent_path_part_id=parent_path_part_id)
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
         items = getattr(result, "items", None) or result or []
@@ -118,12 +135,16 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_info(
-        path_part_id: Annotated[UUID, Field(description="Any PDO id — folder, document, section, or chunk.")],
+        path_part_id: Annotated[
+            UUID, Field(description="Any PDO id — folder, document, section, or chunk.")
+        ],
     ) -> PathPartAncestry:
         """Return a path-part's own info plus its root-to-leaf ancestry breadcrumb.
 
         Use when you need to resolve a node's type or build a human-readable
-        path before calling ``read``.
+        path before calling ``read`` or ``cite``. The returned ``ancestry``
+        list is ordered root → … → parent (excluding the node itself), so the
+        last element is the immediate parent.
         """
         client = get_api_client()
         api = PathPartsApi(client)
@@ -136,9 +157,7 @@ def register(mcp: FastMCP) -> None:
             raise rest_to_mcp(exc) from exc
 
         ancestry_items = (
-            getattr(ancestry_resp, "ancestors", None)
-            or getattr(ancestry_resp, "items", None)
-            or []
+            getattr(ancestry_resp, "ancestors", None) or getattr(ancestry_resp, "items", None) or []
         )
         node_info = _pp_info(node)
         if node_info is None:

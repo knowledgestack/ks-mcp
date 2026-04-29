@@ -1,6 +1,8 @@
 # Roadmap
 
-`ks-mcp` is in active development. This is our public plan — each item below is tracked as a GitHub issue, grouped into a milestone. Thumbs-up the ones that matter most to you; we prioritize community signal.
+`ks-mcp` is in active development. This is our public plan — each item below is tracked as a GitHub issue, grouped into a milestone.
+
+> 👍 **Thumbs-up the issues that matter most to you.** We sort milestones by community signal — your reaction directly moves things up the queue. ⭐ Starring the repo helps too.
 
 > **Legend:** 🟢 shipped · 🟡 in progress · ⚪ planned
 
@@ -8,11 +10,14 @@
 
 Read-only tool surface over the Knowledge Stack API. Shipped.
 
+- 🟢 `ask` — one-shot grounded Q&A via the KS agent (SSE assembled into a single result)
 - 🟢 `search_knowledge`, `search_keyword`
 - 🟢 `read`, `read_around`
+- 🟢 `cite` — structured citations with page-aware footnotes
 - 🟢 `list_contents`, `find`, `get_info`
 - 🟢 `view_chunk_image`
 - 🟢 `get_organization_info`, `get_current_datetime`
+- 🟢 `trace_chunk_lineage`, `compare_versions` (provenance)
 - 🟢 stdio + Streamable HTTP transports
 
 ## v0.2 — Registry & auth 🟡 (target: Q2 2026)

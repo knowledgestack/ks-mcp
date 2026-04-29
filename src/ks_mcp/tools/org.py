@@ -1,6 +1,5 @@
 """Tenant-context tools: organisation info + current datetime."""
 
-
 import os
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -75,12 +74,22 @@ def _fetch_tenant() -> OrganizationInfo:
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def get_organization_info() -> OrganizationInfo:
-        """Return the caller's tenant metadata: id, name, default language, timezone."""
+        """Return the caller's tenant metadata: id, name, default language, timezone.
+
+        Cached per process. Useful as the first call when the user's question
+        depends on locale ("translate this to our default language") or the
+        tenant's name ("write an internal email at <tenant>").
+        """
         return _fetch_tenant()
 
     @mcp.tool()
     def get_current_datetime() -> CurrentDateTime:
-        """Return current date/time in both UTC and the tenant's timezone."""
+        """Return current date/time in both UTC and the tenant's timezone.
+
+        Use whenever the user's query is relative ("yesterday's notes", "this
+        quarter's results"). The tool consults ``get_organization_info`` for
+        the tenant's IANA timezone, falling back to UTC if unset.
+        """
         info = _fetch_tenant()
         now_utc = datetime.now(UTC)
         try:

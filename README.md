@@ -15,6 +15,9 @@
 [![MCP](https://img.shields.io/badge/MCP-1.2+-8A2BE2)](https://modelcontextprotocol.io)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/McHmxUeS)
 
+> ⭐ **If `ks-mcp` saves you a day of wiring up retrieval, please [star the repo](https://github.com/knowledgestack/ks-mcp/stargazers) — it's the single best signal we use to prioritize the [roadmap](#roadmap).**
+> Got a tool you wish existed? [Open a feature request](https://github.com/knowledgestack/ks-mcp/issues/new?template=feature_request.yml). Want a working example? See the [`ks-cookbook`](https://github.com/knowledgestack/ks-cookbook).
+
 ---
 
 ## Table of contents
@@ -32,7 +35,9 @@
   - [pydantic-ai](#pydantic-ai)
   - [LangGraph](#langgraph)
   - [OpenAI Agents SDK](#openai-agents-sdk)
-- [Tools (v1 — read-only)](#tools-v1--read-only)
+- [Tools](#tools)
+- [How the tools fit together](#how-the-tools-fit-together)
+- [Examples & cookbooks](#examples--cookbooks)
 - [Transports](#transports)
 - [Security model](#security-model)
 - [Diagnostics](#diagnostics)
@@ -56,7 +61,7 @@ Most agent frameworks ship their own "retrieval toolbox" the moment you need to 
 
 **Key properties:**
 
-- **Read-only by design.** v1 deliberately exposes no mutating tools. Safe to connect to production knowledge bases.
+- **Mostly read-only.** Every tool is read-only except `ask`, which posts a user message to a (newly-created or reused) thread so the KS agent can stream a grounded answer back. There is no ingest / delete surface in v1.
 - **Tenant-scoped.** Every call is authenticated with a per-user API key; nothing crosses tenant boundaries.
 - **Grounded.** Every search result and `read` payload returns stable chunk IDs + path parts you can cite.
 - **Two transports.** Local stdio for desktop agents; Streamable HTTP for remote / multi-agent deployments.
@@ -212,10 +217,12 @@ agent = Agent(name="Research", mcp_servers=[server])
 
 | Tool | Description |
 | --- | --- |
+| `ask` | One-shot grounded Q&A: dispatches to the KS agent, streams the assistant reply, and returns assembled text + citations. |
 | `search_knowledge` | Semantic (dense-vector) chunk search over the tenant corpus. |
 | `search_keyword` | BM25 chunk search for exact terminology and identifiers. |
-| `read` | Read a folder / document / section / chunk by path or ID. |
+| `read` | Read a folder / document / section / chunk by `path_part_id` (also accepts a `chunk_id` directly). |
 | `read_around` | Fetch the N chunks before and after an anchor chunk for context expansion. |
+| `cite` | Build a structured citation (document, path, page, snippet, `[chunk:UUID]` tag) for one chunk. |
 | `list_contents` | List children of a folder (like `ls`). |
 | `find` | Fuzzy-match a path-part by name when you don't know the exact path. |
 | `get_info` | Path-part metadata + ancestry breadcrumb, for citations. |
@@ -241,6 +248,68 @@ agent = Agent(name="Research", mcp_servers=[server])
 | `audit_cross_document_contradictions` | Find contradictions across a folder subtree. | ⚪ v0.4 |
 
 Writes (ingest / delete / generate) are intentionally **not** exposed in Phase 1 or 2. See the [Roadmap](#roadmap) for the plan around admin-scoped write tools.
+
+## How the tools fit together
+
+You have **two paths** to a grounded answer. Pick the one that fits the agent
+you're building.
+
+```text
+              ┌────────────── Quick path: one-shot grounded Q&A ──────────────┐
+              │                                                                │
+   user q. ──►│  ask(question, [thread_id])                                    │──► answer + citations
+              │  (KS agent does the retrieval + drafting; you just ship it.)   │
+              └────────────────────────────────────────────────────────────────┘
+
+              ┌────────────── Custom path: roll your own loop ────────────────┐
+              │                                                                │
+              │   search_knowledge / search_keyword                            │
+              │              │                                                 │
+              │              ▼   chunk_id, materialized_path                   │
+              │   read_around(chunk_id) · read(chunk_id|pp_id) · view_chunk_image
+              │              │                                                 │
+              │              ▼                                                 │
+              │   cite(chunk_id)  →  [chunk:UUID] tag + structured footnote    │
+              │              │                                                 │
+              │              ▼                                                 │
+              │       you assemble the answer                                  │
+              └────────────────────────────────────────────────────────────────┘
+```
+
+`ask` is the right choice when you want one tool call to do the whole job.
+The custom path is right when you need to weave multiple chunks across
+documents, when you want to control the prompt, or when you're building a
+multi-step agent that interleaves retrieval with other tools.
+
+Side tools — `list_contents`, `find`, `get_info` — exist for navigation when
+the user asks about a specific document by name or wants you to walk a folder
+tree. `trace_chunk_lineage` and `compare_versions` answer "where did this
+evidence come from?" once you already have a chunk in hand.
+
+**Identifier cheat sheet**
+
+| Field | Source | Use it with |
+| --- | --- | --- |
+| `chunk_id` | `search_*` hits, `read` output, neighbour `[chunk:UUID]` tags | `cite`, `read_around`, `view_chunk_image`, `read` (fallback path) |
+| `path_part_id` | `list_contents`, `find`, `get_info`, search hits | `read`, `get_info`, `list_contents`, search filters |
+| `materialized_path` | every chunk / path-part response | display only — never use as an id |
+
+`chunk_id` and `path_part_id` look identical (both are UUIDs) but are
+**different objects**. When in doubt, pass it to `read` — it accepts either.
+
+## Examples & cookbooks
+
+End-to-end, citation-grounded examples live in **[`ks-cookbook`](https://github.com/knowledgestack/ks-cookbook)** — every recipe drives this MCP server (stdio plumbing, real `[chunk:UUID]` citations) from a working agent. The cookbook organises recipes by domain; some categories you'll find:
+
+- **Sales / RevOps** — account research, ICP matching, deal-loss retros, churn risk evidence.
+- **Legal / Privacy** — NDA review, DPA gap checks, clause extraction, data-subject request responder.
+- **Healthcare** — discharge summary rewrite, drug-interaction checker, audit-defensible HCC coder.
+- **Finance & risk** — Basel III risk weighting, AML/SAR narrative drafting, cash-flow anomaly detection.
+- **Engineering ops** — ADR drafter, changelog from commits, API deprecation notices, change-monitor → PR.
+
+Browse the full list in [`recipes/INDEX.md`](https://github.com/knowledgestack/ks-cookbook/blob/main/recipes/INDEX.md) (and the longer-form **flagships/** directory for multi-step agents).
+
+If you build something interesting on top of `ks-mcp`, please [open a PR against `ks-cookbook`](https://github.com/knowledgestack/ks-cookbook/pulls) — we feature community recipes on the cookbook front page.
 
 ## Transports
 
@@ -293,14 +362,17 @@ src/ks_mcp/
 ├── errors.py         # typed error mapping
 └── tools/
     ├── search.py     # search_knowledge, search_keyword
-    ├── read.py       # read, read_around
-    ├── browse.py     # list_contents, find, get_info, view_chunk_image
-    └── org.py        # get_organization_info, get_current_datetime
+    ├── read.py       # read, read_around, view_chunk_image
+    ├── cite.py       # cite (structured citation builder)
+    ├── ask.py        # ask (one-shot agent Q&A over SSE)
+    ├── browse.py     # list_contents, find, get_info
+    ├── org.py        # get_organization_info, get_current_datetime
+    └── provenance.py # trace_chunk_lineage, compare_versions
 ```
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/knowledgestack/ks-mcp/issues) for everything on deck. Highlights for the next few releases:
+See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/knowledgestack/ks-mcp/issues) for everything on deck. **We prioritize what users thumbs-up** — if a milestone matters to you, react on the issue.
 
 - **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, prompt library.
 - **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
@@ -308,11 +380,15 @@ See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/k
 - **v0.5** — hybrid search (dense + BM25 fusion) tool, and a `summarize_document` convenience tool.
 - **v1.0** — stable tool surface, semver guarantees, registry listing on [github.com/mcp](https://github.com/mcp).
 
-Want to influence it? Thumbs-up the issues you care about, or open a [feature request](https://github.com/knowledgestack/ks-mcp/issues/new?template=feature_request.yml).
+Three ways to influence the roadmap:
+
+1. ⭐ **[Star the repo](https://github.com/knowledgestack/ks-mcp/stargazers)** — stars are how we justify investment in this surface.
+2. 👍 **Thumbs-up issues** in the [tracker](https://github.com/knowledgestack/ks-mcp/issues) — we sort by reactions when picking the next milestone.
+3. ✨ **[Open a feature request](https://github.com/knowledgestack/ks-mcp/issues/new?template=feature_request.yml)** — concrete use cases beat abstract wishlists.
 
 ## Related repos
 
-- **[ks-cookbook](https://github.com/knowledgestack/ks-cookbook)** — 32 production-style agent flagships built on this server.
+- **[ks-cookbook](https://github.com/knowledgestack/ks-cookbook)** — production-style agent flagships built on this server (start here for working code).
 - **[ks-sdk-python](https://github.com/knowledgestack/ks-sdk-python)** — Python SDK (`ksapi` on PyPI) for admin / write operations.
 - **[ks-sdk-ts](https://github.com/knowledgestack/ks-sdk-ts)** — TypeScript SDK (`@knowledge-stack/ksapi` on npm).
 - **[ks-docs](https://github.com/knowledgestack/ks-docs)** — central developer docs (Mintlify → docs.knowledgestack.ai).
@@ -322,6 +398,11 @@ Want to influence it? Thumbs-up the issues you care about, or open a [feature re
 Issues and PRs welcome. Please read [SECURITY.md](SECURITY.md) before reporting anything sensitive, and open a discussion first for large feature proposals so we can align on shape before you write code.
 
 Development happens in the open on `main`; feature branches land via PR with CI (pytest + ruff + pyright) required to pass.
+
+**Two quick ways to help, even if you can't open a PR:**
+
+- ⭐ **Star** the repo — it directly shapes our investment.
+- 💬 Drop a note on [Discord](https://discord.gg/McHmxUeS) telling us what you're building. We frequently turn user stories into cookbook recipes.
 
 ## License
 
