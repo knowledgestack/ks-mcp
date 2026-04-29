@@ -1,6 +1,6 @@
 <!-- mcp-name: io.github.knowledgestack/ks-mcp -->
 
-# `knowledgestack-mcp`
+# `Knowledge Stack MCP`
 
 > **Focus on agents. We handle document intelligence.**
 >
