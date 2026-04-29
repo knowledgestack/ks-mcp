@@ -1,6 +1,5 @@
 """Map ``ksapi.ApiException`` onto MCP-friendly responses."""
 
-
 import ksapi
 from mcp import McpError
 from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ErrorData
@@ -25,10 +24,7 @@ def rest_to_mcp(exc: ksapi.ApiException) -> McpError:
         msg = f"Forbidden for this path (403). {snippet}"
         return McpError(ErrorData(code=INVALID_PARAMS, message=msg))
     if status >= 500:
-        msg = (
-            f"KS backend error ({status}). Transient; retry later, do not auto-loop. "
-            f"{snippet}"
-        )
+        msg = f"KS backend error ({status}). Transient; retry later, do not auto-loop. {snippet}"
         return McpError(ErrorData(code=INTERNAL_ERROR, message=msg))
 
     return McpError(

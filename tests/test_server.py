@@ -1,17 +1,21 @@
 """Server-level smoke tests for the KS MCP server."""
 
-
 EXPECTED_TOOLS = {
     "search_knowledge",
     "search_keyword",
     "read",
     "read_around",
+    "cite",
+    "ask",
     "list_contents",
     "find",
     "get_info",
     "view_chunk_image",
     "get_organization_info",
     "get_current_datetime",
+    # Phase 2 provenance:
+    "trace_chunk_lineage",
+    "compare_versions",
 }
 
 
@@ -20,8 +24,11 @@ def test_build_server_metadata() -> None:
 
     mcp = build_server(host="0.0.0.0", port=9999)
     assert mcp.name == "knowledgestack"
-    assert "search_knowledge" in mcp.instructions
-    assert "read_around" in mcp.instructions
+    instructions = mcp.instructions or ""
+    assert "search_knowledge" in instructions
+    assert "read_around" in instructions
+    assert "cite" in instructions
+    assert "ask" in instructions
 
 
 async def test_all_tools_registered() -> None:
@@ -30,9 +37,7 @@ async def test_all_tools_registered() -> None:
     mcp = build_server()
     tools = await mcp.list_tools()
     names = {t.name for t in tools}
-    assert EXPECTED_TOOLS.issubset(names), (
-        f"Missing tools: {EXPECTED_TOOLS - names}"
-    )
+    assert EXPECTED_TOOLS.issubset(names), f"Missing tools: {EXPECTED_TOOLS - names}"
 
 
 async def test_every_tool_has_non_empty_description() -> None:

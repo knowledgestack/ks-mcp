@@ -5,7 +5,6 @@ agents so they can reason about *where* a chunk came from and *how* a document
 changed between two versions — not just retrieve text.
 """
 
-
 import difflib
 from typing import Annotated, Any
 from uuid import UUID
@@ -49,14 +48,18 @@ def _flatten_version_text(client: ksapi.ApiClient, version_id: UUID, limit: int 
     offset = 0
     while True:
         contents: Any = api.get_document_version_contents(
-            version_id=version_id, limit=100, offset=offset,
+            version_id=version_id,
+            limit=100,
+            offset=offset,
         )
         items = getattr(contents, "items", None) or []
         if not items:
             break
         for item in items:
             inner = getattr(item, "actual_instance", None) or item
-            text = getattr(inner, "text", None) or getattr(inner, "content", "") or ""
+            # ksapi's ChunkContentItem stores body on ``.content``; tolerate ``.text``
+            # for older SDK builds.
+            text = getattr(inner, "content", None) or getattr(inner, "text", "") or ""
             if text:
                 lines.append(text.strip())
         if len(items) < 100 or len(lines) >= limit:
@@ -68,13 +71,17 @@ def _flatten_version_text(client: ksapi.ApiClient, version_id: UUID, limit: int 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def trace_chunk_lineage(
-        chunk_id: Annotated[UUID, Field(description="The chunk whose lineage you want to inspect.")],
+        chunk_id: Annotated[
+            UUID, Field(description="The chunk whose lineage you want to inspect.")
+        ],
     ) -> LineageResult:
-        """Return the lineage graph for a chunk.
+        """Return the lineage graph for a chunk (merge/split/re-embed history).
 
-        KS tracks how chunks are derived (merge / split / re-embed / re-ingest) so
-        that agents can explain *why* a piece of evidence exists. Use this when a
-        downstream answer cites a chunk and you need to justify provenance.
+        KS tracks how chunks are derived (merge / split / re-embed /
+        re-ingest) so that agents can explain *why* a piece of evidence
+        exists. Use this when a downstream answer cites a chunk and you need
+        to justify provenance — for example to answer "did this fact survive
+        from v3, or did it appear in v4?".
         """
         client = get_api_client()
         api = ChunkLineagesApi(client)
@@ -102,16 +109,23 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def compare_versions(
-        document_id: Annotated[UUID, Field(description="Document whose versions you want to diff.")],
+        document_id: Annotated[
+            UUID, Field(description="Document whose versions you want to diff.")
+        ],
         from_version_id: Annotated[UUID, Field(description="Older / baseline version id.")],
         to_version_id: Annotated[UUID, Field(description="Newer / target version id.")],
-        max_chunks_per_side: Annotated[int, Field(description="Cap per-version chunks loaded for the diff.", ge=10, le=2000)] = 500,
+        max_chunks_per_side: Annotated[
+            int, Field(description="Cap per-version chunks loaded for the diff.", ge=10, le=2000)
+        ] = 500,
     ) -> VersionDiffResult:
         """Produce a unified text diff between two versions of the same document.
 
-        Client-side line diff over each version's flattened chunk text — enough
-        for agents to answer "what changed in v5 vs v4?" without loading both
-        versions wholesale into the prompt.
+        Client-side line diff over each version's flattened chunk text —
+        enough for agents to answer "what changed in v5 vs v4?" without
+        loading both versions wholesale into the prompt. The diff is capped
+        to ``max_chunks_per_side`` chunks per version; for very long
+        documents, scope the question with ``parent_path_part_ids`` on a
+        prior ``search_*`` call instead.
         """
         client = get_api_client()
         try:
@@ -122,7 +136,8 @@ def register(mcp: FastMCP) -> None:
 
         diff_lines = list(
             difflib.unified_diff(
-                before, after,
+                before,
+                after,
                 fromfile=f"v:{from_version_id}",
                 tofile=f"v:{to_version_id}",
                 lineterm="",
@@ -130,7 +145,9 @@ def register(mcp: FastMCP) -> None:
             )
         )
         added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
-        removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+        removed = sum(
+            1 for line in diff_lines if line.startswith("-") and not line.startswith("---")
+        )
         return VersionDiffResult(
             document_id=document_id,
             from_version_id=from_version_id,

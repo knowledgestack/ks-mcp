@@ -5,7 +5,6 @@ re-doing the TLS handshake for every tool invocation. Reads ``KS_API_KEY`` and
 ``KS_BASE_URL`` from the environment.
 """
 
-
 import os
 from functools import lru_cache
 
@@ -15,9 +14,7 @@ import ksapi
 def _env(key: str, *, required: bool = True, default: str | None = None) -> str:
     value = os.environ.get(key, default)
     if required and not value:
-        raise RuntimeError(
-            f"{key} is not set. Export it or add it to your MCP client config."
-        )
+        raise RuntimeError(f"{key} is not set. Export it or add it to your MCP client config.")
     return value or ""
 
 
