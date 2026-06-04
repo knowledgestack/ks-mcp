@@ -62,6 +62,7 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ secrets.KS_BOT_PAT }}
           commit-message: "chore(deps): bump ksapi to ${{ steps.target.outputs.version }}"
           branch: ci/bump-ksapi-${{ steps.target.outputs.version }}
           title: "chore(deps): bump ksapi to ${{ steps.target.outputs.version }}"
