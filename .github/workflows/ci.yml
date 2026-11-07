@@ -13,7 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # 3.13 is here because its compiler dedents docstrings (gh-81283) while
+        # 3.11/3.12 don't. Tool descriptions come from docstrings, so leaving
+        # 3.13 untested let an interpreter-dependent `schemas/` export reach
+        # main and fail CI on 3.12 only. Test what people develop on.
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -39,3 +43,14 @@ jobs:
 
       - name: Test
         run: uv run pytest tests/ -v
+
+      # Redundant with the test above, but it names the fix in the job log
+      # rather than inside a pytest assertion diff.
+      - name: Check published schemas are up to date
+        run: |
+          uv run python scripts/export_schemas.py
+          if ! git diff --quiet -- schemas/; then
+            echo "::error::schemas/ is out of date. Run 'uv run python scripts/export_schemas.py' and commit the result."
+            git --no-pager diff -- schemas/
+            exit 1
+          fi

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Return a path-part's own info plus its root-to-leaf ancestry breadcrumb.\n\nUse when you need to resolve a node's type or build a human-readable\npath before calling ``read`` or ``cite``. The returned ``ancestry``\nlist is ordered root → … → parent (excluding the node itself), so the\nlast element is the immediate parent.",
+  "inputSchema": {
+    "properties": {
+      "path_part_id": {
+        "description": "Any PDO id — folder, document, section, or chunk.",
+        "format": "uuid",
+        "title": "Path Part Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path_part_id"
+    ],
+    "title": "get_infoArguments",
+    "type": "object"
+  },
+  "name": "get_info",
+  "outputSchema": {
+    "$defs": {
+      "PathPartInfo": {
+        "properties": {
+          "materialized_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Materialized Path"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "part_type": {
+            "description": "Node kind, e.g. FOLDER | DOCUMENT | SECTION | CHUNK (the backend's PartType enum also covers DATA_SOURCE, SKILL, EMAIL_THREAD and more).",
+            "title": "Part Type",
+            "type": "string"
+          },
+          "path_part_id": {
+            "format": "uuid",
+            "title": "Path Part Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path_part_id",
+          "name",
+          "part_type"
+        ],
+        "title": "PathPartInfo",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "ancestry": {
+        "description": "Root → … → parent, excluding the node itself.",
+        "items": {
+          "$ref": "#/$defs/PathPartInfo"
+        },
+        "title": "Ancestry",
+        "type": "array"
+      },
+      "node": {
+        "$ref": "#/$defs/PathPartInfo"
+      }
+    },
+    "required": [
+      "node",
+      "ancestry"
+    ],
+    "title": "PathPartAncestry",
+    "type": "object"
+  }
+}

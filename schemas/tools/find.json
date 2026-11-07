@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Fuzzy-search path-parts (folders, documents, sections) by name.\n\nUse when the user refers to a document by a remembered title fragment\n(\"the onboarding handbook\", \"Q3 forecast\"). For matching the *body* of\na document, use ``search_keyword`` instead — ``find`` only looks at\nnames.",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "default": 50,
+        "description": "Max entries to return (1-200).",
+        "maximum": 200,
+        "minimum": 1,
+        "title": "Limit",
+        "type": "integer"
+      },
+      "parent_path_part_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Restrict search to descendants of this folder. Omit for whole tenant.",
+        "title": "Parent Path Part Id"
+      },
+      "query": {
+        "description": "Fuzzy substring of the path-part's name.",
+        "maxLength": 255,
+        "minLength": 1,
+        "title": "Query",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "findArguments",
+    "type": "object"
+  },
+  "name": "find",
+  "outputSchema": {
+    "$defs": {
+      "PathPartInfo": {
+        "properties": {
+          "materialized_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Materialized Path"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "part_type": {
+            "description": "Node kind, e.g. FOLDER | DOCUMENT | SECTION | CHUNK (the backend's PartType enum also covers DATA_SOURCE, SKILL, EMAIL_THREAD and more).",
+            "title": "Part Type",
+            "type": "string"
+          },
+          "path_part_id": {
+            "format": "uuid",
+            "title": "Path Part Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path_part_id",
+          "name",
+          "part_type"
+        ],
+        "title": "PathPartInfo",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "result": {
+        "items": {
+          "$ref": "#/$defs/PathPartInfo"
+        },
+        "title": "Result",
+        "type": "array"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "findOutput",
+    "type": "object"
+  }
+}

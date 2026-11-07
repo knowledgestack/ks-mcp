@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Read the contents of any PDO and return Markdown text.\n\nDispatch:\n\n* **CHUNK** → raw chunk text + a ``[chunk:UUID]`` citation tag.\n* **SECTION** → section name + page number; use ``read`` on the parent\n  DOCUMENT for full text.\n* **DOCUMENT** → flattened, ordered chunks with section headings,\n  paginated up to ``max_chars``.\n* **FOLDER / unknown** → name + a hint to use ``list_contents`` to drill in.\n\nIf ``path_part_id`` 404s as a path-part, ``read`` retries the lookup as\na chunk, so callers can pass either a ``path_part_id`` or a ``chunk_id``\nfrom a search result without a second round-trip. Pair with ``cite``\nwhen you also need a citation footer.",
+  "inputSchema": {
+    "properties": {
+      "max_chars": {
+        "default": 4000,
+        "description": "Truncate returned text to this many characters.",
+        "maximum": 50000,
+        "minimum": 100,
+        "title": "Max Chars",
+        "type": "integer"
+      },
+      "path_part_id": {
+        "description": "Any PDO id (folder, document, section, or chunk path-part) — OR a raw chunk_id from a search hit. The tool first tries to resolve it as a path-part; on 404 it falls back to fetching as a chunk.",
+        "format": "uuid",
+        "title": "Path Part Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path_part_id"
+    ],
+    "title": "readArguments",
+    "type": "object"
+  },
+  "name": "read",
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "readOutput",
+    "type": "object"
+  }
+}
