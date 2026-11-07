@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Check whether a Knowledge Stack background workflow is still running.\n\n`ask` and `extract` return a `workflow_id`; so do the backend's ingest,\nre-embed and reclassify jobs. Pass one here to find out whether it\nsucceeded, failed, or is still going — useful when a call timed out and\nyou need to know whether the work is still in flight before retrying\nand doing it twice.\n\nRead `state` (`running` / `succeeded` / `failed` / `cancelled` /\n`unknown`) rather than the raw `temporal_status`, and `is_terminal` to\ndecide whether polling again can change the answer.\n\nThis is a single point-in-time read, not a wait. Do not call it in a\ntight loop: if `is_terminal` is false, tell the user the work is still\nrunning and let them ask again, or leave a gap proportional to\n`elapsed_s` before the next check.\n\nAn unknown id comes back with `found=false` rather than as an error —\nworkflows age out of Temporal's retention window, so \"not there\" does\nnot mean \"failed\".\n",
+  "inputSchema": {
+    "properties": {
+      "workflow_id": {
+        "description": "Workflow id to look up — e.g. the `workflow_id` returned by `ask` or by an ingest call.",
+        "maxLength": 512,
+        "minLength": 1,
+        "title": "Workflow Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "workflow_id"
+    ],
+    "title": "get_workflow_statusArguments",
+    "type": "object"
+  },
+  "name": "get_workflow_status",
+  "outputSchema": {
+    "description": "Point-in-time state of one Temporal workflow owned by the caller's tenant.",
+    "properties": {
+      "closed_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "ISO-8601 close time; null while still running.",
+        "title": "Closed At"
+      },
+      "elapsed_s": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Seconds from start to close, or to now if still running. Use it to pace polling instead of retrying in a tight loop.",
+        "title": "Elapsed S"
+      },
+      "found": {
+        "default": true,
+        "description": "False when no workflow with this id is visible to the tenant — either a bad id, or a run old enough to have aged out of Temporal's retention. Every other field is then unset; do not read absence as failure.",
+        "title": "Found",
+        "type": "boolean"
+      },
+      "is_terminal": {
+        "description": "True once the run has stopped for good. While false the result may still change, so a later poll can return something different.",
+        "title": "Is Terminal",
+        "type": "boolean"
+      },
+      "run_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Temporal run id — the specific attempt, distinct from the id.",
+        "title": "Run Id"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "ISO-8601 start time.",
+        "title": "Started At"
+      },
+      "state": {
+        "description": "Normalized outcome: `running` | `succeeded` | `failed` | `cancelled` | `unknown`. Branch on this rather than on ``temporal_status``.",
+        "title": "State",
+        "type": "string"
+      },
+      "summary": {
+        "description": "One-line plain-English status.",
+        "title": "Summary",
+        "type": "string"
+      },
+      "task_queue": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Temporal task queue it ran on.",
+        "title": "Task Queue"
+      },
+      "temporal_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Raw Temporal status name (e.g. `RUNNING`, `COMPLETED`), for logs.",
+        "title": "Temporal Status"
+      },
+      "workflow_id": {
+        "description": "The workflow id you asked about.",
+        "title": "Workflow Id",
+        "type": "string"
+      },
+      "workflow_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Which workflow ran (e.g. the ingest or agent workflow).",
+        "title": "Workflow Type"
+      }
+    },
+    "required": [
+      "workflow_id",
+      "state",
+      "is_terminal",
+      "summary"
+    ],
+    "title": "WorkflowStatus",
+    "type": "object"
+  }
+}

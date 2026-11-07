@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "prompts": [
+    {
+      "arguments": [
+        {
+          "name": "question",
+          "required": true
+        },
+        {
+          "name": "path_part_id",
+          "required": true
+        }
+      ],
+      "description": "Answer a question using only one folder subtree, refusing to answer from outside it.",
+      "name": "answer-from-folder"
+    },
+    {
+      "arguments": [
+        {
+          "name": "left",
+          "required": true
+        },
+        {
+          "name": "right",
+          "required": true
+        },
+        {
+          "name": "focus",
+          "required": false
+        }
+      ],
+      "description": "Compare two documents (or two versions of one) and report real differences with citations on both sides.",
+      "name": "compare-documents"
+    },
+    {
+      "arguments": [
+        {
+          "name": "chunk_id",
+          "required": true
+        },
+        {
+          "name": "question",
+          "required": false
+        }
+      ],
+      "description": "Take a chunk you already have and build out its full surrounding context and provenance.",
+      "name": "expand-around-chunk"
+    },
+    {
+      "arguments": [
+        {
+          "name": "subject",
+          "required": true
+        },
+        {
+          "name": "path_part_id",
+          "required": false
+        },
+        {
+          "name": "max_words",
+          "required": false
+        }
+      ],
+      "description": "Summarize a document or folder subtree into Markdown where every claim carries a [chunk:UUID] citation tag.",
+      "name": "summarize-with-citations"
+    }
+  ],
+  "server": "knowledgestack",
+  "tools": [
+    {
+      "name": "ask",
+      "schema": "tools/ask.json",
+      "summary": "Ask the Knowledge Stack agent a question and return the final answer."
+    },
+    {
+      "name": "cite",
+      "schema": "tools/cite.json",
+      "summary": "Build a structured citation for a single chunk."
+    },
+    {
+      "name": "compare_versions",
+      "schema": "tools/compare_versions.json",
+      "summary": "Diff two versions of the same document, computed server-side."
+    },
+    {
+      "name": "extract",
+      "schema": "tools/extract.json",
+      "summary": "Extract structured, schema-conforming JSON from the knowledge base."
+    },
+    {
+      "name": "find",
+      "schema": "tools/find.json",
+      "summary": "Fuzzy-search path-parts (folders, documents, sections) by name."
+    },
+    {
+      "name": "get_current_datetime",
+      "schema": "tools/get_current_datetime.json",
+      "summary": "Return current date/time in both UTC and the tenant's timezone."
+    },
+    {
+      "name": "get_info",
+      "schema": "tools/get_info.json",
+      "summary": "Return a path-part's own info plus its root-to-leaf ancestry breadcrumb."
+    },
+    {
+      "name": "get_organization_info",
+      "schema": "tools/get_organization_info.json",
+      "summary": "Return the caller's tenant metadata: id, name, default language, timezone."
+    },
+    {
+      "name": "get_workflow_status",
+      "schema": "tools/get_workflow_status.json",
+      "summary": "Check whether a Knowledge Stack background workflow is still running."
+    },
+    {
+      "name": "list_contents",
+      "schema": "tools/list_contents.json",
+      "summary": "List the immediate children of a folder, like ``ls``."
+    },
+    {
+      "name": "read",
+      "schema": "tools/read.json",
+      "summary": "Read the contents of any PDO and return Markdown text."
+    },
+    {
+      "name": "read_around",
+      "schema": "tools/read_around.json",
+      "summary": "Return the ``radius`` chunks before and after an anchor chunk."
+    },
+    {
+      "name": "search_hybrid",
+      "schema": "tools/search_hybrid.json",
+      "summary": "Fused dense + BM25 search — the best default when you're unsure."
+    },
+    {
+      "name": "search_keyword",
+      "schema": "tools/search_keyword.json",
+      "summary": "BM25 / keyword search over the tenant's chunks."
+    },
+    {
+      "name": "search_knowledge",
+      "schema": "tools/search_knowledge.json",
+      "summary": "Semantic (dense-vector) search over the tenant's chunks."
+    },
+    {
+      "name": "trace_chunk_lineage",
+      "schema": "tools/trace_chunk_lineage.json",
+      "summary": "Return the lineage graph for a chunk (merge/split/re-embed history)."
+    },
+    {
+      "name": "view_chunk_image",
+      "schema": "tools/view_chunk_image.json",
+      "summary": "Fetch the image bytes for an IMAGE-type chunk and return them to the agent."
+    }
+  ],
+  "version": "0.1.0"
+}

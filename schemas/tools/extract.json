@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Extract structured, schema-conforming JSON from the knowledge base.\n\nRuns the KS agent in extraction mode: it retrieves the relevant chunks\nand returns an object matching your JSON Schema, so you get typed\nfields instead of prose to re-parse. Use this for populating records,\nfilling forms, or building tables; use ``ask`` when you want a written\nanswer with citations.\n\nExactly one of ``output_schema`` / ``schema_path_part_id`` is required.\nThe call blocks until the agent finishes and consumes one message of\ntenant quota.\n",
+  "inputSchema": {
+    "properties": {
+      "output_schema": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "JSON Schema (as an object) describing the shape to return. Provide this OR `schema_path_part_id`, not both.",
+        "title": "Output Schema"
+      },
+      "prompt": {
+        "description": "What to pull out of the knowledge base, in plain language — e.g. 'the payment terms and renewal date from the Acme MSA'.",
+        "maxLength": 8000,
+        "minLength": 1,
+        "title": "Prompt",
+        "type": "string"
+      },
+      "schema_path_part_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "path_part_id of a KS document whose body *is* a JSON Schema — use this to reuse a schema your tenant already stores. Provide this OR `output_schema`, not both.",
+        "title": "Schema Path Part Id"
+      },
+      "timeout_s": {
+        "default": 120.0,
+        "description": "How long to wait for the agent to finish (seconds).",
+        "maximum": 600.0,
+        "minimum": 10.0,
+        "title": "Timeout S",
+        "type": "number"
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "extractArguments",
+    "type": "object"
+  },
+  "name": "extract",
+  "outputSchema": {
+    "description": "Schema-conforming object returned by ``extract``.",
+    "properties": {
+      "structured": {
+        "additionalProperties": true,
+        "description": "The extracted object. Conforms to the JSON Schema passed as `output_schema` (or stored at `schema_path_part_id`).",
+        "title": "Structured",
+        "type": "object"
+      }
+    },
+    "required": [
+      "structured"
+    ],
+    "title": "ExtractResult",
+    "type": "object"
+  }
+}

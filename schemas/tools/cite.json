@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Build a structured citation for a single chunk.\n\nReturns ``document_name``, ``materialized_path``, ``page_number`` (when\nthe chunk lives under a paginated SECTION), a short ``snippet``, and a\nstable ``tag`` string (``[chunk:UUID]``) suitable for inline use in the\nagent's prose.\n\nRecommended usage: call ``cite`` once per chunk that backed an answer,\nthen append the ``tag`` to the relevant sentence and surface the rest\n(document, path, page, snippet) in a footnote / sources block.\n",
+  "inputSchema": {
+    "properties": {
+      "chunk_id": {
+        "description": "Chunk id to build a citation for — typically the ``chunk_id`` from a ``search_knowledge`` / ``search_keyword`` hit. NOT a ``path_part_id``.",
+        "format": "uuid",
+        "title": "Chunk Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "chunk_id"
+    ],
+    "title": "citeArguments",
+    "type": "object"
+  },
+  "name": "cite",
+  "outputSchema": {
+    "description": "Compact citation payload for a single chunk.\n\nDesigned to be appended verbatim to an agent's prose answer. The ``tag``\nfield is a stable inline reference (``[chunk:UUID]``); ``snippet`` is a\nshort excerpt suitable for tooltips or footnotes; ``materialized_path``\n+ ``page_number`` give a human-readable source location.",
+    "properties": {
+      "chunk_id": {
+        "format": "uuid",
+        "title": "Chunk Id",
+        "type": "string"
+      },
+      "document_name": {
+        "description": "Name of the owning document.",
+        "title": "Document Name",
+        "type": "string"
+      },
+      "materialized_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Root-to-leaf path of the chunk (e.g. ``Handbook/Onboarding/Section 2/...``).",
+        "title": "Materialized Path"
+      },
+      "page_number": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Page number of the chunk's nearest SECTION ancestor, when available. May be None for non-paginated documents (web pages, plain text).",
+        "title": "Page Number"
+      },
+      "snippet": {
+        "description": "Up to ~240 chars of the chunk text, suitable for a footnote.",
+        "title": "Snippet",
+        "type": "string"
+      },
+      "tag": {
+        "description": "Inline reference token: ``[chunk:UUID]``. Append to the sentence in the agent's answer that the chunk supports.",
+        "title": "Tag",
+        "type": "string"
+      }
+    },
+    "required": [
+      "chunk_id",
+      "document_name",
+      "snippet",
+      "tag"
+    ],
+    "title": "Citation",
+    "type": "object"
+  }
+}
