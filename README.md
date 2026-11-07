@@ -117,7 +117,7 @@ ks-mcp 0.1.0
 KS_BASE_URL: https://api.knowledgestack.ai
 OK: authenticated to tenant 'Acme Corp' (6f1c…)
     language=en timezone=America/New_York
-    16 tools registered: ask, cite, compare_versions, extract, find, …
+    17 tools registered: ask, cite, compare_versions, extract, find, …
 ```
 
 It exits non-zero with a specific hint when the key or host is wrong, so it's
@@ -291,6 +291,7 @@ number; call `cite(chunk_id)` when you need a page-aware footnote.
 
 | Tool | Description | Status |
 | --- | --- | --- |
+| `get_workflow_status` | Poll a background workflow (from `ask`, `extract`, or an ingest job) for `running` / `succeeded` / `failed`. | ✅ v0.2 |
 | `run_document_workflow` | Kick off a Temporal workflow (re-embed, reclassify, translate, …) scoped to a version. | ⚪ v0.3 |
 | `validate_contract_fields` | Check required fields exist and match types against a contract schema. | ⚪ v0.3 |
 | `audit_cross_document_contradictions` | Find contradictions across a folder subtree. | ⚪ v0.4 |
@@ -438,7 +439,8 @@ src/ks_mcp/
     ├── extract.py    # extract (schema-shaped agent output)
     ├── browse.py     # list_contents, find, get_info
     ├── org.py        # get_organization_info, get_current_datetime
-    └── provenance.py # trace_chunk_lineage, compare_versions
+    ├── provenance.py # trace_chunk_lineage, compare_versions
+    └── workflows.py  # get_workflow_status
 ```
 
 ## Roadmap
