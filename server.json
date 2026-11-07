@@ -37,6 +37,16 @@
           "name": "KS_LOG_LEVEL",
           "description": "Log verbosity (DEBUG/INFO/WARNING/ERROR). Logs go to stderr. Defaults to INFO.",
           "isRequired": false
+        },
+        {
+          "name": "KS_ALLOWED_HOSTS",
+          "description": "Comma-separated Host header allowlist for --http deployments (e.g. mcp.example.com). Only needed when hosting over Streamable HTTP; unused for stdio.",
+          "isRequired": false
+        },
+        {
+          "name": "KS_ALLOWED_ORIGINS",
+          "description": "Comma-separated Origin header allowlist, used alongside KS_ALLOWED_HOSTS.",
+          "isRequired": false
         }
       ]
     }

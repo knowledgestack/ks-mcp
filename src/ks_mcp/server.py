@@ -16,6 +16,12 @@ Environment:
     KS_BASE_URL   (optional)  Override the KS API host (default: production).
     KS_TIMEOUT_S  (optional)  Upstream HTTP timeout in seconds (default: 30).
     KS_LOG_LEVEL  (optional)  DEBUG/INFO/WARNING/ERROR/CRITICAL; logs go to stderr.
+    KS_ALLOWED_HOSTS   (optional) Comma-separated Host header allowlist for
+                                  --http, e.g. "ks-mcp.fly.dev". Set this when
+                                  hosting: binding 0.0.0.0 otherwise disables
+                                  DNS-rebinding protection entirely.
+    KS_ALLOWED_ORIGINS (optional) Comma-separated Origin allowlist, used only
+                                  alongside KS_ALLOWED_HOSTS.
 """
 
 import argparse
@@ -24,9 +30,19 @@ import inspect
 import sys
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from ks_mcp import __version__, prompts
-from ks_mcp.client import configure_logging, get_base_url, get_log_level
+from ks_mcp.client import (
+    configure_logging,
+    get_allowed_hosts,
+    get_allowed_origins,
+    get_base_url,
+    get_log_level,
+    logger,
+)
 from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search, workflows
 
 INSTRUCTIONS = (
@@ -82,6 +98,27 @@ def _normalize_tool_descriptions(mcp: FastMCP) -> None:
             tool.description = inspect.cleandoc(tool.description)
 
 
+def _transport_security() -> TransportSecuritySettings | None:
+    """Build Host/Origin validation settings from the environment.
+
+    FastMCP auto-enables DNS-rebinding protection only when bound to localhost.
+    Bind ``0.0.0.0`` — which every container deployment does — and it passes
+    ``None``, which turns Host and Origin validation *off*. Setting
+    ``KS_ALLOWED_HOSTS`` is how an operator keeps it on with their real
+    hostname.
+
+    Returns ``None`` when unset, preserving FastMCP's own default behaviour.
+    """
+    hosts = get_allowed_hosts()
+    if not hosts:
+        return None
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=get_allowed_origins(),
+    )
+
+
 def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     mcp = FastMCP(
         name="knowledgestack",
@@ -91,6 +128,7 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
         # FastMCP reconfigures root logging in its constructor, so KS_LOG_LEVEL
         # has to reach it or the variable only governs our own namespace.
         log_level=get_log_level(),
+        transport_security=_transport_security(),
     )
     # FastMCP doesn't forward a version to the low-level Server, so clients see
     # the MCP library version in `serverInfo` instead of ours. Set it directly so
@@ -102,6 +140,17 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     # registered; a client that ignores prompts/ simply never lists them.
     prompts.register(mcp)
     _normalize_tool_descriptions(mcp)
+
+    # The MCP endpoint itself can't serve as a health check: `GET /mcp` returns
+    # 406 without an SSE Accept header and 400 without a session id, so every
+    # platform's HTTP probe would read the service as down. This is a liveness
+    # probe only — it deliberately does *not* call the KS API, so a probe can't
+    # burn tenant quota or fail the container over an upstream blip. Use
+    # `--check` to validate credentials.
+    @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    async def healthz(_request: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok", "server": "knowledgestack", "version": __version__})
+
     return mcp
 
 
@@ -133,6 +182,30 @@ async def _run_check() -> int:
     return 0
 
 
+# Hosts for which FastMCP enables DNS-rebinding protection by itself.
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _warn_if_unprotected(host: str) -> None:
+    """Warn when serving HTTP on a public interface with no Host allowlist.
+
+    This is the silent-by-default case: bound to 0.0.0.0 with no
+    ``KS_ALLOWED_HOSTS``, the transport accepts any Host and any Origin. A
+    warning rather than a hard failure, because refusing to start would break
+    anyone already running behind a proxy that handles this.
+    """
+    if host in _LOCAL_HOSTS or get_allowed_hosts():
+        return
+    logger.warning(
+        "Serving Streamable HTTP on %s with no KS_ALLOWED_HOSTS: Host and Origin "
+        "validation are disabled, so any hostname pointed at this server is "
+        "accepted. Set KS_ALLOWED_HOSTS to your public hostname (e.g. "
+        "KS_ALLOWED_HOSTS=mcp.example.com) unless an upstream proxy already "
+        "validates it.",
+        host,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ks-mcp",
@@ -159,6 +232,7 @@ def main() -> None:
 
     mcp = build_server(host=args.host, port=args.port)
     if args.http:
+        _warn_if_unprotected(args.host)
         mcp.run(transport="streamable-http")
     else:
         mcp.run()
