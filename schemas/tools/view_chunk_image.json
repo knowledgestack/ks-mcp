@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Fetch the image bytes for an IMAGE-type chunk and return them to the agent.\n\nOnly works for chunks whose metadata carries at least one S3 URL\n(typically ``chunk_type == \"IMAGE\"``). Agent frameworks that support\nmulti-modal content (Claude, GPT-4o, Gemini) render the result inline;\ntext-only frameworks should expect this tool to error and call\n``read``/``cite`` for a textual surrogate instead.\n",
+  "inputSchema": {
+    "properties": {
+      "chunk_id": {
+        "description": "IMAGE-type chunk id to materialize.",
+        "format": "uuid",
+        "title": "Chunk Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "chunk_id"
+    ],
+    "title": "view_chunk_imageArguments",
+    "type": "object"
+  },
+  "name": "view_chunk_image",
+  "outputSchema": {
+    "$defs": {
+      "Annotations": {
+        "additionalProperties": true,
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Audience"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Priority"
+          }
+        },
+        "title": "Annotations",
+        "type": "object"
+      }
+    },
+    "additionalProperties": true,
+    "description": "Image content for a message.",
+    "properties": {
+      "_meta": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Meta"
+      },
+      "annotations": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Annotations"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "data": {
+        "title": "Data",
+        "type": "string"
+      },
+      "mimeType": {
+        "title": "Mimetype",
+        "type": "string"
+      },
+      "type": {
+        "const": "image",
+        "title": "Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "data",
+      "mimeType"
+    ],
+    "title": "ImageContent",
+    "type": "object"
+  }
+}

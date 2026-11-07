@@ -315,6 +315,31 @@ snippet and never calls `cite`. These move that discipline server-side.
 Rendering a prompt is pure text assembly — no API call, no tenant quota.
 Clients that don't support `prompts/` simply never list them.
 
+### Published schemas
+
+Every tool's input and output JSON Schema is committed under
+[`schemas/`](schemas/), one file per tool plus an
+[`index.json`](schemas/index.json) manifest:
+
+```text
+schemas/
+├── index.json              # manifest: version, tools, prompts
+└── tools/
+    ├── ask.json            # { name, description, inputSchema, outputSchema }
+    ├── search_hybrid.json
+    └── …
+```
+
+Generate from a code change with:
+
+```bash
+uv run python scripts/export_schemas.py
+```
+
+CI fails if the committed files drift from what the server actually serves, so
+a renamed argument or a dropped output field shows up as a reviewable diff
+instead of silently changing the contract.
+
 ## How the tools fit together
 
 You have **three paths** to a grounded answer. Pick the one that fits the agent
