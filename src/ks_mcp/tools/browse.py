@@ -75,7 +75,12 @@ def register(mcp: FastMCP) -> None:
             ),
         ] = None,
         limit: Annotated[
-            int, Field(description="Max entries to return (1-200).", ge=1, le=200)
+            # 100 is the KS folder endpoints' own maximum — the SDK rejects 101
+            # client-side with a pydantic error, which surfaces to the agent as
+            # an internal failure rather than a usable message. Advertising 200
+            # here meant any caller trusting the schema got exactly that.
+            int,
+            Field(description="Max entries to return (1-100).", ge=1, le=100),
         ] = 100,
     ) -> list[PathPartInfo]:
         """List the immediate children of a folder, like ``ls``.
@@ -125,7 +130,9 @@ def register(mcp: FastMCP) -> None:
             ),
         ] = None,
         limit: Annotated[
-            int, Field(description="Max entries to return (1-200).", ge=1, le=200)
+            # Same 100-entry ceiling as `list_contents`; see the note there.
+            int,
+            Field(description="Max entries to return (1-100).", ge=1, le=100),
         ] = 50,
     ) -> list[PathPartInfo]:
         """Fuzzy-search path-parts (folders, documents, sections) by name.
