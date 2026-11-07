@@ -63,6 +63,35 @@ def get_timeout_s() -> float:
     return timeout
 
 
+def _csv_env(key: str) -> list[str]:
+    """Parse a comma-separated env var into a stripped, non-empty list."""
+    return [item.strip() for item in os.environ.get(key, "").split(",") if item.strip()]
+
+
+def get_allowed_hosts() -> list[str]:
+    """Host header values the Streamable HTTP transport will accept.
+
+    From ``KS_ALLOWED_HOSTS`` (comma-separated, e.g.
+    ``ks-mcp.fly.dev,ks-mcp.internal:*``). Empty means "not configured".
+
+    This exists because FastMCP only auto-enables DNS-rebinding protection when
+    bound to localhost — a server bound to ``0.0.0.0`` (which is every container
+    deployment) gets *no* Host/Origin validation at all unless we pass settings
+    in ourselves.
+    """
+    return _csv_env("KS_ALLOWED_HOSTS")
+
+
+def get_allowed_origins() -> list[str]:
+    """Origin header values to accept, from ``KS_ALLOWED_ORIGINS``.
+
+    Only consulted when ``KS_ALLOWED_HOSTS`` is set. Leaving it empty permits
+    requests with no ``Origin`` header (ordinary non-browser MCP clients) while
+    still rejecting a browser origin that isn't listed.
+    """
+    return _csv_env("KS_ALLOWED_ORIGINS")
+
+
 def get_log_level() -> LogLevel:
     """Return a valid ``KS_LOG_LEVEL`` name, falling back to INFO.
 
