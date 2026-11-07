@@ -133,6 +133,8 @@ Export a Knowledge Stack API key (issued from the dashboard — see the [cookboo
 | `KS_BASE_URL`  | no       | `https://api.knowledgestack.ai`     | Point at staging or a self-hosted deployment.               |
 | `KS_TIMEOUT_S` | no       | `30`                                | HTTP timeout for upstream KS calls. Must be > 0. (Raises the SDK's own 5s default.) |
 | `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Sets the whole server's verbosity; logs go to stderr, never stdout. |
+| `KS_ALLOWED_HOSTS` | no   | _(unset)_                           | Comma-separated `Host` allowlist for `--http`, e.g. `mcp.example.com` (a `:*` suffix wildcards the port). **Set this when hosting:** FastMCP only auto-enables DNS-rebinding protection on a localhost bind, so `0.0.0.0` accepts any `Host` without it. |
+| `KS_ALLOWED_ORIGINS` | no | _(unset)_                           | Comma-separated `Origin` allowlist, used only alongside `KS_ALLOWED_HOSTS`. Leave unset to allow clients that send no `Origin` (most non-browser MCP clients). |
 
 ```bash
 export KS_API_KEY="sk-user-..."
@@ -339,6 +341,30 @@ uv run python scripts/export_schemas.py
 CI fails if the committed files drift from what the server actually serves, so
 a renamed argument or a dropped output field shows up as a reviewable diff
 instead of silently changing the contract.
+
+## Hosting it
+
+A reference [`Dockerfile`](Dockerfile) and sample configs for Fly.io, Cloud Run
+and Modal live in [`deploy/`](deploy/README.md):
+
+```bash
+docker build -t ks-mcp .
+docker run --rm -p 8765:8765 -e KS_API_KEY=sk-user-... ks-mcp
+curl -fsS localhost:8765/healthz
+```
+
+The image runs unprivileged, defaults to Streamable HTTP on `:8765`, and
+exposes `GET /healthz` for liveness probes — `GET /mcp` can't serve that
+purpose, since it returns 406 without an SSE `Accept` header and 400 without a
+session id. `/healthz` makes no KS API call, so a probe can't consume tenant
+quota; use `ks-mcp --check` to validate credentials.
+
+Two things to get right when hosting, both covered in
+[`deploy/README.md`](deploy/README.md): **don't scale to zero** and **route a
+session back to its own instance** — MCP sessions are stateful, so a dropped or
+misrouted session fails with `Missing session ID` rather than reconnecting. The
+server also has no auth of its own yet ([#3](https://github.com/knowledgestack/ks-mcp/issues/3)),
+so put it behind your own authenticating proxy before exposing it publicly.
 
 ## How the tools fit together
 

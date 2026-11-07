@@ -1,0 +1,49 @@
+# Fly.io — sample config for hosting ks-mcp over Streamable HTTP.
+#
+#   fly launch --no-deploy --copy-config --config deploy/fly.toml
+#   fly secrets set KS_API_KEY=sk-user-...     # never put the key in this file
+#   fly deploy --config deploy/fly.toml
+#
+# Endpoint: https://<app>.fly.dev/mcp     Health: https://<app>.fly.dev/healthz
+
+app = "ks-mcp"
+primary_region = "iad"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[env]
+  # Non-secret settings only. KS_API_KEY goes through `fly secrets set`.
+  KS_LOG_LEVEL = "INFO"
+  KS_TIMEOUT_S = "30"
+
+  # Required when hosting. FastMCP only auto-enables DNS-rebinding protection
+  # for localhost binds, so a container bound to 0.0.0.0 accepts *any* Host and
+  # Origin header unless this is set. Change it to your real app hostname.
+  KS_ALLOWED_HOSTS = "ks-mcp.fly.dev"
+  KS_ALLOWED_ORIGINS = "https://ks-mcp.fly.dev"
+
+[http_service]
+  internal_port = 8765
+  force_https = true
+
+  # MCP sessions are stateful: the Streamable HTTP transport keeps per-session
+  # state in the process, so a scaled-to-zero machine drops live sessions and a
+  # second machine can't serve a session the first one owns.
+  #
+  # Keep one warm machine, and if you scale out, turn on sticky sessions in
+  # Fly's proxy — otherwise requests land on a machine with no such session id.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
