@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Extract structured, schema-conforming JSON from the knowledge base.\n\nRuns the KS agent in extraction mode: it retrieves the relevant chunks\nand returns an object matching your JSON Schema, so you get typed\nfields instead of prose to re-parse. Use this for populating records,\nfilling forms, or building tables; use ``ask`` when you want a written\nanswer with citations.\n\nExactly one of ``output_schema`` / ``schema_path_part_id`` is required.\nThe call blocks until the agent finishes and consumes one message of\ntenant quota.\n",
+  "description": "Extract structured, schema-conforming JSON from the knowledge base.\n\nRuns the KS agent in extraction mode: it retrieves the relevant chunks\nand returns an object matching your JSON Schema, so you get typed\nfields instead of prose to re-parse. Use this for populating records,\nfilling forms, or building tables; use ``ask`` when you want a written\nanswer with citations.\n\nExactly one of ``output_schema`` / ``schema_path_part_id`` is required.\nThe call blocks until the agent finishes and consumes one message of\ntenant quota.",
   "inputSchema": {
     "properties": {
       "output_schema": {

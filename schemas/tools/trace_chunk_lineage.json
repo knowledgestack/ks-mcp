@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Return the lineage graph for a chunk (merge/split/re-embed history).\n\nKS tracks how chunks are derived (merge / split / re-embed /\nre-ingest) so that agents can explain *why* a piece of evidence\nexists. Use this when a downstream answer cites a chunk and you need\nto justify provenance — for example to answer \"did this fact survive\nfrom v3, or did it appear in v4?\".\n\n``edges`` are parent → child derivation steps; an edge whose\n``parent_chunk_id`` is null marks an original ingest. ``nodes`` carries\na short preview of each chunk in the graph so you can see what changed\nwithout a second round-trip.\n",
+  "description": "Return the lineage graph for a chunk (merge/split/re-embed history).\n\nKS tracks how chunks are derived (merge / split / re-embed /\nre-ingest) so that agents can explain *why* a piece of evidence\nexists. Use this when a downstream answer cites a chunk and you need\nto justify provenance — for example to answer \"did this fact survive\nfrom v3, or did it appear in v4?\".\n\n``edges`` are parent → child derivation steps; an edge whose\n``parent_chunk_id`` is null marks an original ingest. ``nodes`` carries\na short preview of each chunk in the graph so you can see what changed\nwithout a second round-trip.",
   "inputSchema": {
     "properties": {
       "chunk_id": {

@@ -13,7 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # 3.13 is here because its compiler dedents docstrings (gh-81283) while
+        # 3.11/3.12 don't. Tool descriptions come from docstrings, so leaving
+        # 3.13 untested let an interpreter-dependent `schemas/` export reach
+        # main and fail CI on 3.12 only. Test what people develop on.
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 

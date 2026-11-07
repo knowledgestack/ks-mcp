@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Semantic (dense-vector) search over the tenant's chunks.\n\nUse for conceptual questions (\"how does X work\", \"anything about Y\").\nReturns passages semantically related to the query with a relevance\nscore (higher = better). For exact-term lookups use ``search_keyword``;\nwhen you want both at once use ``search_hybrid``.\n\nEach hit carries a ``chunk_id``, ``materialized_path`` and a ``text``\nsnippet. Recommended follow-ups:\n\n* ``cite(chunk_id)`` — get a structured citation for the answer.\n* ``read_around(chunk_id, radius=2)`` — pull surrounding context.\n* ``read(path_part_id=chunk_id)`` — fetch the full chunk body.\n",
+  "description": "Semantic (dense-vector) search over the tenant's chunks.\n\nUse for conceptual questions (\"how does X work\", \"anything about Y\").\nReturns passages semantically related to the query with a relevance\nscore (higher = better). For exact-term lookups use ``search_keyword``;\nwhen you want both at once use ``search_hybrid``.\n\nEach hit carries a ``chunk_id``, ``materialized_path`` and a ``text``\nsnippet. Recommended follow-ups:\n\n* ``cite(chunk_id)`` — get a structured citation for the answer.\n* ``read_around(chunk_id, radius=2)`` — pull surrounding context.\n* ``read(path_part_id=chunk_id)`` — fetch the full chunk body.",
   "inputSchema": {
     "$defs": {
       "ChunkType": {
