@@ -86,17 +86,42 @@ The server is a thin, audited façade over the Knowledge Stack REST API (`ksapi`
 
 ## Install
 
+> **Pre-release:** `knowledgestack-mcp` is not on PyPI yet, so install from GitHub
+> for now. The `uvx knowledgestack-mcp` form below starts working the moment we
+> tag a release, and every snippet in this README uses it — swap in the
+> `--from git+…` flag until then.
+
 ```bash
-# run without installing (recommended for end users)
+# run without installing, straight from the repo (works today)
+uvx --from git+https://github.com/knowledgestack/ks-mcp knowledgestack-mcp
+
+# once published to PyPI
 uvx knowledgestack-mcp
 
 # or install into an environment
-pip install knowledgestack-mcp
-# or
-uv pip install knowledgestack-mcp
+pip install git+https://github.com/knowledgestack/ks-mcp
 ```
 
 Requires Python **3.11+**.
+
+Verify the install and your API key in one step — this calls the real API,
+prints your tenant, and lists every registered tool:
+
+```bash
+export KS_API_KEY="sk-user-..."
+uvx --from git+https://github.com/knowledgestack/ks-mcp knowledgestack-mcp --check
+```
+
+```text
+ks-mcp 0.1.0
+KS_BASE_URL: https://api.knowledgestack.ai
+OK: authenticated to tenant 'Acme Corp' (6f1c…)
+    language=en timezone=America/New_York
+    16 tools registered: ask, cite, compare_versions, extract, find, …
+```
+
+It exits non-zero with a specific hint when the key or host is wrong, so it's
+also a usable CI smoke test.
 
 ## Configure
 
@@ -106,8 +131,8 @@ Export a Knowledge Stack API key (issued from the dashboard — see the [cookboo
 | -------------- | -------- | ----------------------------------- | ----------------------------------------------------------- |
 | `KS_API_KEY`   | yes      | —                                   | A `sk-user-…` key scoped to a single tenant user.           |
 | `KS_BASE_URL`  | no       | `https://api.knowledgestack.ai`     | Point at staging or a self-hosted deployment.               |
-| `KS_TIMEOUT_S` | no       | `30`                                | HTTP timeout for upstream calls.                            |
-| `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG` prints tool I/O to stderr (never stdout).           |
+| `KS_TIMEOUT_S` | no       | `30`                                | HTTP timeout for upstream KS calls. Must be > 0. (Raises the SDK's own 5s default.) |
+| `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Sets the whole server's verbosity; logs go to stderr, never stdout. |
 
 ```bash
 export KS_API_KEY="sk-user-..."
@@ -122,6 +147,9 @@ uvx knowledgestack-mcp
 
 # Streamable HTTP — remote agents, ngrok tunnels, container deployments
 uvx knowledgestack-mcp --http --host 0.0.0.0 --port 8765
+
+# verify key + connectivity, print the tool list, exit
+uvx knowledgestack-mcp --check
 ```
 
 ## Client setup
@@ -145,9 +173,11 @@ uvx knowledgestack-mcp --http --host 0.0.0.0 --port 8765
 ### Claude Code
 
 ```bash
-claude mcp add knowledgestack -- uvx knowledgestack-mcp
-# then set the key in your shell or in ~/.claude/settings.json env
+claude mcp add knowledgestack -e KS_API_KEY=sk-user-... -- uvx knowledgestack-mcp
 ```
+
+Without `-e`, the server starts but every tool returns 401 — `claude mcp add`
+does not inherit your shell environment.
 
 ### Cursor
 
@@ -223,6 +253,8 @@ agent = Agent(name="Research", mcp_servers=[server])
 | Tool | Description |
 | --- | --- |
 | `ask` | One-shot grounded Q&A: dispatches to the KS agent, streams the assistant reply, and returns assembled text + citations. |
+| `extract` | Schema-conforming JSON extraction: pass a JSON Schema, get typed fields instead of prose. |
+| `search_hybrid` | Fused dense + BM25 search — the best default when you don't know which to pick. |
 | `search_knowledge` | Semantic (dense-vector) chunk search over the tenant corpus. |
 | `search_keyword` | BM25 chunk search for exact terminology and identifiers. |
 | `read` | Read a folder / document / section / chunk by `path_part_id` (also accepts a `chunk_id` directly). |
@@ -234,6 +266,17 @@ agent = Agent(name="Research", mcp_servers=[server])
 | `view_chunk_image` | Download an IMAGE chunk and return it as MCP image content. |
 | `get_organization_info` | Tenant name, language, timezone. |
 | `get_current_datetime` | UTC + tenant-local datetime (handy for relative queries). |
+
+`ask` and `extract` each consume one message of tenant quota; every other tool
+is read-only and free. `search_*` accept a `chunk_types` filter (e.g.
+`["TABLE"]` to retrieve only tabular chunks), and `ask` accepts
+`output_language` (`en` / `zh`).
+
+Both agent tools run a workflow to completion, so they take a `timeout_s`
+(default 120s) independent of `KS_TIMEOUT_S`. `ask` returns citations by
+reading them off the persisted assistant message once the stream closes — the
+thread SSE protocol itself carries text only. `ask` citations have no page
+number; call `cite(chunk_id)` when you need a page-aware footnote.
 
 ### Phase 2 — provenance & explanation (in progress)
 
@@ -256,7 +299,7 @@ Writes (ingest / delete / generate) are intentionally **not** exposed in Phase 1
 
 ## How the tools fit together
 
-You have **two paths** to a grounded answer. Pick the one that fits the agent
+You have **three paths** to a grounded answer. Pick the one that fits the agent
 you're building.
 
 ```text
@@ -266,9 +309,15 @@ you're building.
               │  (KS agent does the retrieval + drafting; you just ship it.)   │
               └────────────────────────────────────────────────────────────────┘
 
+              ┌────────── Structured path: typed fields, not prose ───────────┐
+              │                                                                │
+   schema  ──►│  extract(prompt, output_schema={...})                          │──► {"field": value}
+              │  (KS agent retrieves, then fills your JSON Schema.)            │
+              └────────────────────────────────────────────────────────────────┘
+
               ┌────────────── Custom path: roll your own loop ────────────────┐
               │                                                                │
-              │   search_knowledge / search_keyword                            │
+              │   search_hybrid / search_knowledge / search_keyword            │
               │              │                                                 │
               │              ▼   chunk_id, materialized_path                   │
               │   read_around(chunk_id) · read(chunk_id|pp_id) · view_chunk_image
@@ -281,7 +330,9 @@ you're building.
               └────────────────────────────────────────────────────────────────┘
 ```
 
-`ask` is the right choice when you want one tool call to do the whole job.
+`ask` is the right choice when you want one tool call to do the whole job, and
+`extract` when the consumer is code rather than a human (populating records,
+filling forms, building tables).
 The custom path is right when you need to weave multiple chunks across
 documents, when you want to control the prompt, or when you're building a
 multi-step agent that interleaves retrieval with other tools.
@@ -327,7 +378,8 @@ Both transports speak the same tool surface.
 
 ## Security model
 
-- The server never logs `KS_API_KEY` or full request bodies at `INFO`.
+- The server never logs `KS_API_KEY`, the `Authorization` header, or request bodies —
+  at any level, including `KS_LOG_LEVEL=DEBUG`.
 - All tool responses are schema-validated via Pydantic before being returned to the client.
 - Tenant isolation is enforced **upstream** by the Knowledge Stack API; the server is a pass-through with no cross-tenant cache.
 - Report vulnerabilities privately via [SECURITY.md](SECURITY.md).
@@ -338,6 +390,12 @@ Click through every tool with a real API key using the official inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector uvx knowledgestack-mcp
+```
+
+Check your key, host and tool list without a client (exits non-zero on failure):
+
+```bash
+uvx knowledgestack-mcp --check
 ```
 
 Enable verbose tool tracing (prints to stderr, safe for stdio):
@@ -357,6 +415,13 @@ uv run ruff check .
 uv run pyright
 ```
 
+**Writing a tool?** `ksapi` >= 3 is async-first: its unsuffixed methods are
+coroutines, and the `*_sync` variants would block the MCP event loop. Every
+tool here is an `async def` that awaits the SDK, and `tests/test_server.py`
+enforces both rules. Tool tests run against a local HTTP stand-in
+(`tests/conftest.py`) rather than mocking the SDK, so a renamed field in a KS
+response fails the suite instead of being swallowed by a `getattr` fallback.
+
 Layout:
 
 ```
@@ -366,10 +431,11 @@ src/ks_mcp/
 ├── schema.py         # pydantic IO models
 ├── errors.py         # typed error mapping
 └── tools/
-    ├── search.py     # search_knowledge, search_keyword
+    ├── search.py     # search_knowledge, search_keyword, search_hybrid
     ├── read.py       # read, read_around, view_chunk_image
     ├── cite.py       # cite (structured citation builder)
     ├── ask.py        # ask (one-shot agent Q&A over SSE)
+    ├── extract.py    # extract (schema-shaped agent output)
     ├── browse.py     # list_contents, find, get_info
     ├── org.py        # get_organization_info, get_current_datetime
     └── provenance.py # trace_chunk_lineage, compare_versions
@@ -382,7 +448,7 @@ See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/k
 - **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, prompt library.
 - **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
 - **v0.4** — hosted Streamable HTTP deployment guide (Fly.io, Cloud Run, Modal), per-tool rate limits.
-- **v0.5** — hybrid search (dense + BM25 fusion) tool, and a `summarize_document` convenience tool.
+- **v0.5** — ~~hybrid search (dense + BM25 fusion)~~ ✅ shipped as `search_hybrid`; next up a `summarize_document` convenience tool.
 - **v1.0** — stable tool surface, semver guarantees, registry listing on [github.com/mcp](https://github.com/mcp).
 
 Three ways to influence the roadmap:

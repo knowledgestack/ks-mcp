@@ -7,15 +7,19 @@ from uuid import UUID
 import httpx
 import ksapi
 from ksapi.api.chunks_api import ChunksApi
+from ksapi.api.document_versions_api import DocumentVersionsApi
 from ksapi.api.documents_api import DocumentsApi
 from ksapi.api.path_parts_api import PathPartsApi
 from ksapi.api.sections_api import SectionsApi
+from ksapi.models.part_type import PartType
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ImageContent
 from pydantic import Field
 
-from ks_mcp.client import get_api_client
+from ks_mcp.client import get_api_client, get_timeout_s
 from ks_mcp.errors import is_not_found, rest_to_mcp
+
+_PAGE_SIZE = 100
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -26,22 +30,58 @@ def _truncate(text: str, limit: int) -> str:
 
 def _normalize_part_type(value: Any) -> str:
     """Coerce a ksapi PartType (or string) into a bare uppercase token."""
-    text = str(value or "")
-    if text.startswith("PartType."):
-        text = text.removeprefix("PartType.")
-    return text
+    text = str(getattr(value, "value", None) or value or "")
+    return text.removeprefix("PartType.").upper()
 
 
-def _read_chunk_body(client: ksapi.ApiClient, chunk_id: UUID, max_chars: int) -> str:
-    chunk: Any = ChunksApi(client).get_chunk(chunk_id=chunk_id)
-    # ksapi model exposes the text as .content on Chunk; older builds used .text.
-    body = getattr(chunk, "content", None) or getattr(chunk, "text", "") or ""
-    return _truncate(f"{body}\n\n[chunk:{chunk_id}]", max_chars)
+async def _read_chunk_body(client: ksapi.ApiClient, chunk_id: UUID, max_chars: int) -> str:
+    chunk = await ChunksApi(client).get_chunk(chunk_id=chunk_id)
+    return _truncate(f"{chunk.content or ''}\n\n[chunk:{chunk_id}]", max_chars)
+
+
+async def _read_document_body(
+    client: ksapi.ApiClient, document_id: UUID, fallback_name: str, max_chars: int
+) -> str:
+    doc = await DocumentsApi(client).get_document(document_id=document_id)
+    # `active_version_id` is required and non-nullable in the KS schema, so a
+    # DOCUMENT always has a version to read.
+    version_id = doc.active_version_id
+    versions = DocumentVersionsApi(client)
+    pieces: list[str] = [f"# {doc.name or fallback_name}\n"]
+    offset = 0
+    while True:
+        contents = await versions.get_document_version_contents(
+            version_id=version_id,
+            limit=_PAGE_SIZE,
+            offset=offset,
+        )
+        items = contents.items or []
+        if not items:
+            break
+        for item in items:
+            # Items are a discriminated union of SectionContentItem /
+            # ChunkContentItem; unwrap to the concrete model.
+            inner = getattr(item, "actual_instance", None) or item
+            if _normalize_part_type(getattr(inner, "part_type", "")) == "SECTION":
+                pieces.append(f"\n## {getattr(inner, 'name', '')}\n")
+                continue
+            text = getattr(inner, "content", "") or ""
+            if not text:
+                continue
+            chunk_id = getattr(inner, "metadata_obj_id", None)
+            tag = f" [chunk:{chunk_id}]" if chunk_id else ""
+            pieces.append(f"{text}{tag}\n")
+        if len(items) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+        if sum(len(p) for p in pieces) > max_chars:
+            break
+    return _truncate("".join(pieces), max_chars)
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def read(
+    async def read(
         path_part_id: Annotated[
             UUID,
             Field(
@@ -74,31 +114,30 @@ def register(mcp: FastMCP) -> None:
         when you also need a citation footer.
         """
         client = get_api_client()
-        path_parts = PathPartsApi(client)
         try:
-            pp = path_parts.get_path_part(path_part_id=path_part_id)
+            pp = await PathPartsApi(client).get_path_part(path_part_id=path_part_id)
         except ksapi.ApiException as exc:
             # Agents often pass a chunk_id straight from a search hit. Treat 404
             # as "maybe it's a chunk id" and retry rather than dead-ending.
             if is_not_found(exc):
                 try:
-                    return _read_chunk_body(client, path_part_id, max_chars)
+                    return await _read_chunk_body(client, path_part_id, max_chars)
                 except ksapi.ApiException as inner:
                     raise rest_to_mcp(inner) from inner
             raise rest_to_mcp(exc) from exc
 
-        part_type = _normalize_part_type(getattr(pp, "part_type", ""))
-        metadata_obj_id = getattr(pp, "metadata_obj_id", None)
+        part_type = _normalize_part_type(pp.part_type)
+        metadata_obj_id = pp.metadata_obj_id
 
         try:
             if part_type == "CHUNK" and metadata_obj_id:
-                return _read_chunk_body(client, metadata_obj_id, max_chars)
+                return await _read_chunk_body(client, metadata_obj_id, max_chars)
 
             if part_type == "SECTION" and metadata_obj_id:
-                section: Any = SectionsApi(client).get_section(section_id=metadata_obj_id)
-                page = getattr(section, "page_number", None)
+                section = await SectionsApi(client).get_section(section_id=metadata_obj_id)
+                page = section.page_number
                 page_suffix = f" (page {page})" if page is not None else ""
-                header = f"# {getattr(section, 'name', None) or pp.name}{page_suffix}"
+                header = f"# {section.name or pp.name}{page_suffix}"
                 hint = (
                     "(SECTION has no inline body — read its parent DOCUMENT for full text, "
                     "or use list_contents on this path-part to walk children.)"
@@ -106,51 +145,14 @@ def register(mcp: FastMCP) -> None:
                 return _truncate(f"{header}\n\n{hint}", max_chars)
 
             if part_type == "DOCUMENT" and metadata_obj_id:
-                from ksapi.api.document_versions_api import DocumentVersionsApi
-
-                doc: Any = DocumentsApi(client).get_document(document_id=metadata_obj_id)
-                version_id = getattr(doc, "active_version_id", None)
-                if version_id is None:
-                    return getattr(doc, "name", pp.name)
-                pieces: list[str] = [f"# {getattr(doc, 'name', pp.name)}\n"]
-                offset = 0
-                while True:
-                    contents: Any = DocumentVersionsApi(client).get_document_version_contents(
-                        version_id=version_id,
-                        limit=100,
-                        offset=offset,
-                    )
-                    items = getattr(contents, "items", None) or []
-                    if not items:
-                        break
-                    for item in items:
-                        inner = getattr(item, "actual_instance", None) or item
-                        ptype = _normalize_part_type(getattr(inner, "part_type", ""))
-                        name = getattr(inner, "name", "")
-                        if ptype == "SECTION":
-                            pieces.append(f"\n## {name}\n")
-                        else:
-                            # ChunkContentItem stores body on `.content`; tolerate `.text`.
-                            text = (
-                                getattr(inner, "content", None) or getattr(inner, "text", "") or ""
-                            )
-                            chunk_id = getattr(inner, "metadata_obj_id", None) or getattr(
-                                inner, "id", None
-                            )
-                            tag = f" [chunk:{chunk_id}]" if chunk_id else ""
-                            if text:
-                                pieces.append(f"{text}{tag}\n")
-                    if len(items) < 100:
-                        break
-                    offset += 100
-                return _truncate("".join(pieces), max_chars)
+                return await _read_document_body(client, metadata_obj_id, pp.name, max_chars)
 
             return f"{pp.name} ({part_type or 'UNKNOWN'}) — use list_contents to drill in."
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 
     @mcp.tool()
-    def read_around(
+    async def read_around(
         chunk_id: Annotated[UUID, Field(description="Anchor chunk id (NOT a path_part_id).")],
         radius: Annotated[
             int,
@@ -158,12 +160,22 @@ def register(mcp: FastMCP) -> None:
                 description="How many chunks before AND after the anchor to include.", ge=0, le=10
             ),
         ] = 2,
+        within_section: Annotated[
+            bool,
+            Field(
+                description=(
+                    "True (default) stays inside the anchor's own section. False walks the "
+                    "whole document version in order, crossing section boundaries."
+                )
+            ),
+        ] = True,
     ) -> str:
         """Return the ``radius`` chunks before and after an anchor chunk.
 
         Great for pulling enough local context when a single chunk isn't
         enough — e.g. the answer hinges on a sentence that references "the
-        table above".
+        table above". Set ``within_section=False`` when the context you need
+        probably spills into the neighbouring section.
 
         Output is ordered preceding → anchor → succeeding. Each neighbour is
         labelled (``[ANCHOR]`` or ``[ctx N]``) and tagged with its
@@ -174,32 +186,31 @@ def register(mcp: FastMCP) -> None:
         try:
             # ksapi exposes `prev` and `next` separately; `radius` is the symmetric
             # convenience the MCP tool surfaces to keep the agent UX simple.
-            neighbours: Any = api.get_chunk_neighbors(
+            # `content_type=CHUNK` drops SECTION rows from the neighbour window.
+            neighbours = await api.get_chunk_neighbors(
                 chunk_id=chunk_id,
                 prev=radius,
                 next=radius,
-                chunks_only=True,
+                content_type=PartType.CHUNK,
+                within_section=within_section,
             )
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 
-        items = getattr(neighbours, "items", []) or []
-        anchor_index = getattr(neighbours, "anchor_index", -1)
+        items = neighbours.items or []
+        anchor_index = neighbours.anchor_index
         pieces: list[str] = []
         for idx, raw in enumerate(items):
-            # Items are SectionContentItemOrChunkContentItem — unwrap the union.
-            # `chunks_only=True` upstream means non-chunk neighbours are already
-            # filtered out, so we just render whatever comes back.
             inner = getattr(raw, "actual_instance", None) or raw
-            text = getattr(inner, "content", None) or getattr(inner, "text", "") or ""
-            inner_chunk_id = getattr(inner, "metadata_obj_id", None) or getattr(inner, "id", None)
+            text = getattr(inner, "content", "") or ""
+            inner_chunk_id = getattr(inner, "metadata_obj_id", None)
             label = "ANCHOR" if idx == anchor_index else f"ctx {idx - anchor_index:+d}"
             tag = f" [chunk:{inner_chunk_id}]" if inner_chunk_id else ""
             pieces.append(f"[{label}]{tag}\n{text}")
         return "\n\n".join(pieces) or "(no neighbours returned)"
 
     @mcp.tool()
-    def view_chunk_image(
+    async def view_chunk_image(
         chunk_id: Annotated[UUID, Field(description="IMAGE-type chunk id to materialize.")],
     ) -> ImageContent:
         """Fetch the image bytes for an IMAGE-type chunk and return them to the agent.
@@ -212,22 +223,21 @@ def register(mcp: FastMCP) -> None:
         """
         api = ChunksApi(get_api_client())
         try:
-            chunk: Any = api.get_chunk(chunk_id=chunk_id)
+            chunk = await api.get_chunk(chunk_id=chunk_id)
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 
-        urls = getattr(chunk, "asset_s3_urls", None) or []
+        urls = chunk.asset_s3_urls or []
         if not urls:
             raise ValueError("Chunk has no image assets (not an IMAGE-type chunk).")
 
-        with httpx.Client(timeout=30.0) as http:
-            resp = http.get(urls[0])
+        async with httpx.AsyncClient(timeout=get_timeout_s()) as http:
+            resp = await http.get(urls[0])
             resp.raise_for_status()
             body = resp.content
 
-        mime = resp.headers.get("content-type", "image/png")
         return ImageContent(
             type="image",
             data=base64.b64encode(body).decode(),
-            mimeType=mime,
+            mimeType=resp.headers.get("content-type", "image/png"),
         )

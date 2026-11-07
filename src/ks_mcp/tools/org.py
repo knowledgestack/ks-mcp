@@ -1,11 +1,11 @@
 """Tenant-context tools: organisation info + current datetime."""
 
-import os
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-import httpx
 import ksapi
+from ksapi.api.tenants_api import TenantsApi
+from ksapi.api.users_api import UsersApi
 from mcp.server.fastmcp import FastMCP
 
 from ks_mcp.client import get_api_client
@@ -15,90 +15,70 @@ from ks_mcp.schema import CurrentDateTime, OrganizationInfo
 _cached_tenant: OrganizationInfo | None = None
 
 
-def _fetch_tenant_via_httpx() -> OrganizationInfo:
-    """Fallback for deployments whose SDK / backend doesn't yet expose ``GET /v1/tenants/me``.
+def _enum_value(value: object, default: str) -> str:
+    """Unwrap a ksapi enum (or plain string) to its wire value."""
+    if value is None:
+        return default
+    return str(getattr(value, "value", None) or value) or default
 
-    Tries ``/v1/tenants/me`` first, and if the backend pre-dates that route
-    (returns 404 / 422 because ``me`` is being parsed as a UUID path param),
-    falls back to ``/v1/tenants`` and picks the first one the caller belongs to.
+
+async def _fetch_tenant() -> OrganizationInfo:
+    """Resolve the caller's tenant.
+
+    There is no ``/v1/tenants/me`` route, so the API-key identity is resolved
+    via ``GET /v1/users/me`` (which reports ``current_tenant_id``) and then the
+    tenant itself is fetched by id.
     """
-    base = os.environ.get("KS_BASE_URL", "https://api.knowledgestack.ai")
-    key = os.environ.get("KS_API_KEY", "")
-    with httpx.Client(base_url=base, headers={"Authorization": f"Bearer {key}"}, timeout=30) as c:
-        r = c.get("/v1/tenants/me")
-        if r.status_code in (404, 422):
-            r = c.get("/v1/tenants", params={"limit": 1})
-            r.raise_for_status()
-            payload = r.json()
-            items = payload.get("items") or []
-            if not items:
-                raise RuntimeError("No tenants visible to this API key.")
-            body = items[0]
-        else:
-            r.raise_for_status()
-            body = r.json()
-    settings = body.get("settings") or {}
-    return OrganizationInfo(
-        tenant_id=body["id"],
-        name=body.get("name", ""),
-        default_language=str(settings.get("language", "en")),
-        timezone=str(settings.get("timezone", "UTC")),
-    )
-
-
-def _fetch_tenant() -> OrganizationInfo:
     global _cached_tenant
     if _cached_tenant is not None:
         return _cached_tenant
 
-    tenants_api = getattr(ksapi, "TenantsApi", None)
-    if tenants_api is not None and hasattr(tenants_api(get_api_client()), "get_current_tenant"):
-        try:
-            t = tenants_api(get_api_client()).get_current_tenant()
-            settings = getattr(t, "settings", None)
-            info = OrganizationInfo(
-                tenant_id=t.id,
-                name=getattr(t, "name", ""),
-                default_language=str(getattr(settings, "language", "en")) if settings else "en",
-                timezone=str(getattr(settings, "timezone", "UTC")) if settings else "UTC",
-            )
-        except ksapi.ApiException as exc:
-            raise rest_to_mcp(exc) from exc
-    else:
-        info = _fetch_tenant_via_httpx()
+    client = get_api_client()
+    try:
+        me = await UsersApi(client).get_me()
+        tenant: ksapi.TenantResponse = await TenantsApi(client).get_tenant(
+            tenant_id=me.current_tenant_id
+        )
+    except ksapi.ApiException as exc:
+        raise rest_to_mcp(exc) from exc
 
-    _cached_tenant = info
-    return info
+    settings = tenant.settings
+    _cached_tenant = OrganizationInfo(
+        tenant_id=tenant.id,
+        name=tenant.name or "",
+        default_language=_enum_value(getattr(settings, "language", None), "en"),
+        timezone=_enum_value(getattr(settings, "timezone", None), "UTC"),
+    )
+    return _cached_tenant
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def get_organization_info() -> OrganizationInfo:
+    async def get_organization_info() -> OrganizationInfo:
         """Return the caller's tenant metadata: id, name, default language, timezone.
 
         Cached per process. Useful as the first call when the user's question
         depends on locale ("translate this to our default language") or the
         tenant's name ("write an internal email at <tenant>").
         """
-        return _fetch_tenant()
+        return await _fetch_tenant()
 
     @mcp.tool()
-    def get_current_datetime() -> CurrentDateTime:
+    async def get_current_datetime() -> CurrentDateTime:
         """Return current date/time in both UTC and the tenant's timezone.
 
         Use whenever the user's query is relative ("yesterday's notes", "this
         quarter's results"). The tool consults ``get_organization_info`` for
         the tenant's IANA timezone, falling back to UTC if unset.
         """
-        info = _fetch_tenant()
+        info = await _fetch_tenant()
         now_utc = datetime.now(UTC)
         try:
             zone = ZoneInfo(info.timezone)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - any bad tz string falls back to UTC
             zone = UTC
-        now_local = now_utc.astimezone(zone)
         return CurrentDateTime(
             iso_utc=now_utc.isoformat(),
-            iso_local=now_local.isoformat(),
+            iso_local=now_utc.astimezone(zone).isoformat(),
             timezone=str(zone),
         )

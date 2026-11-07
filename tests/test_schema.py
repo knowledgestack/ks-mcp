@@ -72,7 +72,8 @@ def test_ask_result_with_citations_round_trip() -> None:
         document_id=_DOC_ID,
         document_name="Doc",
         materialized_path="A/B",
-        page_number=2,
+        path_part_id=UUID("00000000-0000-0000-0000-000000000050"),
+        version_number=2,
     )
     result = AskResult(
         answer="grounded answer",
@@ -86,6 +87,9 @@ def test_ask_result_with_citations_round_trip() -> None:
     assert dumped["workflow_id"] == "wf-123"
     assert dumped["citations"][0]["quote"] == "the quoted span"
     assert dumped["citations"][0]["document_id"] == _DOC_ID
+    assert dumped["citations"][0]["version_number"] == 2
+    # The ask path resolves no page number — use `cite` when you need one.
+    assert "page_number" not in dumped["citations"][0]
 
 
 def test_ask_result_requires_thread_id() -> None:
