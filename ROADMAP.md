@@ -29,7 +29,8 @@ Read-only tool surface over the Knowledge Stack API. Shipped.
 
 - 🟡 [OAuth 2.1 device flow auth](https://github.com/knowledgestack/ks-mcp/issues) (in addition to API keys)
 - ⚪ MCP `resources/` exposing folders and documents as URI templates
-- ⚪ MCP `prompts/` library: "summarize-with-citations", "compare-documents", "expand-around"
+- 🟢 MCP `prompts/` library: `summarize-with-citations`, `compare-documents`,
+  `expand-around-chunk`, `answer-from-folder`
 - ⚪ Streaming partial search results via MCP progress notifications
 - ⚪ Listing on the official MCP registry at [github.com/mcp](https://github.com/mcp)
 
