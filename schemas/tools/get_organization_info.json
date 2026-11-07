@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Return the caller's tenant metadata: id, name, default language, timezone.\n\nCached per process. Useful as the first call when the user's question\ndepends on locale (\"translate this to our default language\") or the\ntenant's name (\"write an internal email at <tenant>\").\n",
+  "description": "Return the caller's tenant metadata: id, name, default language, timezone.\n\nCached per process. Useful as the first call when the user's question\ndepends on locale (\"translate this to our default language\") or the\ntenant's name (\"write an internal email at <tenant>\").",
   "inputSchema": {
     "properties": {},
     "title": "get_organization_infoArguments",

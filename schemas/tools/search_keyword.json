@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "BM25 / keyword search over the tenant's chunks.\n\nUse when the user mentions a specific term, name, identifier, or\nquoted phrase that needs an exact (or near-exact) match. For\nconceptual queries prefer ``search_knowledge``; for a blend of both\nuse ``search_hybrid``.\n\nEach hit carries a ``chunk_id`` and ``materialized_path``. Pair with\n``cite``/``read``/``read_around`` to ground an answer.\n",
+  "description": "BM25 / keyword search over the tenant's chunks.\n\nUse when the user mentions a specific term, name, identifier, or\nquoted phrase that needs an exact (or near-exact) match. For\nconceptual queries prefer ``search_knowledge``; for a blend of both\nuse ``search_hybrid``.\n\nEach hit carries a ``chunk_id`` and ``materialized_path``. Pair with\n``cite``/``read``/``read_around`` to ground an answer.",
   "inputSchema": {
     "$defs": {
       "ChunkType": {

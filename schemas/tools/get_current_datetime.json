@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Return current date/time in both UTC and the tenant's timezone.\n\nUse whenever the user's query is relative (\"yesterday's notes\", \"this\nquarter's results\"). The tool consults ``get_organization_info`` for\nthe tenant's IANA timezone, falling back to UTC if unset.\n",
+  "description": "Return current date/time in both UTC and the tenant's timezone.\n\nUse whenever the user's query is relative (\"yesterday's notes\", \"this\nquarter's results\"). The tool consults ``get_organization_info`` for\nthe tenant's IANA timezone, falling back to UTC if unset.",
   "inputSchema": {
     "properties": {},
     "title": "get_current_datetimeArguments",

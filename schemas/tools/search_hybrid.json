@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Fused dense + BM25 search — the best default when you're unsure.\n\nRuns the semantic and keyword branches server-side and fuses the\nrankings, so a query that mixes a concept with a literal term (\"the\nrefund policy for SKU-4417\") retrieves well without you having to pick\na strategy. Scores are fusion scores and are not comparable to the\nscores returned by ``search_knowledge`` / ``search_keyword``.\n\nFollow up with ``cite`` / ``read_around`` exactly as for the other\nsearch tools.\n",
+  "description": "Fused dense + BM25 search — the best default when you're unsure.\n\nRuns the semantic and keyword branches server-side and fuses the\nrankings, so a query that mixes a concept with a literal term (\"the\nrefund policy for SKU-4417\") retrieves well without you having to pick\na strategy. Scores are fusion scores and are not comparable to the\nscores returned by ``search_knowledge`` / ``search_keyword``.\n\nFollow up with ``cite`` / ``read_around`` exactly as for the other\nsearch tools.",
   "inputSchema": {
     "$defs": {
       "ChunkType": {
