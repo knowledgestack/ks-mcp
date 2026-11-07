@@ -18,7 +18,8 @@ Read-only tool surface over the Knowledge Stack API. Shipped.
 - 🟢 `list_contents`, `find`, `get_info`
 - 🟢 `view_chunk_image`
 - 🟢 `get_organization_info`, `get_current_datetime`
-- 🟢 `trace_chunk_lineage`, `compare_versions` (provenance)
+- 🟢 `trace_chunk_lineage`, `compare_versions` (provenance; `compare_versions`
+  diffs server-side via `GET /v1/document_versions/{id}/diff`)
 - 🟢 stdio + Streamable HTTP transports
 - 🟢 `--check` setup doctor (validates key + host, lists tools, non-zero exit on failure)
 
