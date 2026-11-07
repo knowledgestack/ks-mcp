@@ -43,7 +43,9 @@ INSTRUCTIONS = (
     "`view_chunk_image` for IMAGE-type chunks. `trace_chunk_lineage` and "
     "`compare_versions` answer provenance questions. The only state-changing "
     "tools are `ask` (creates a thread + assistant message) and `extract`; both "
-    "consume one message of tenant quota. Everything else is read-only."
+    "consume one message of tenant quota. Everything else only reads — though "
+    "`compare_versions` is a privileged read and is audit-logged upstream, like "
+    "a download."
 )
 
 _MODULES = (search, read, browse, cite, ask, extract, org, provenance)

@@ -66,7 +66,7 @@ Most agent frameworks ship their own "retrieval toolbox" the moment you need to 
 
 **Key properties:**
 
-- **Mostly read-only.** Every tool is read-only except `ask`, which posts a user message to a (newly-created or reused) thread so the KS agent can stream a grounded answer back. There is no ingest / delete surface in v1.
+- **Mostly read-only.** Every tool is read-only except `ask`, which posts a user message to a (newly-created or reused) thread so the KS agent can stream a grounded answer back. `compare_versions` reads only, but counts as a privileged read and is audit-logged upstream (like a download). There is no ingest / delete surface in v1.
 - **Tenant-scoped.** Every call is authenticated with a per-user API key; nothing crosses tenant boundaries.
 - **Grounded.** Every search result and `read` payload returns stable chunk IDs + path parts you can cite.
 - **Two transports.** Local stdio for desktop agents; Streamable HTTP for remote / multi-agent deployments.
@@ -283,7 +283,7 @@ number; call `cite(chunk_id)` when you need a page-aware footnote.
 | Tool | Description | Status |
 | --- | --- | --- |
 | `trace_chunk_lineage` | Return the lineage graph (merge / split / re-embed / re-ingest) for a chunk. | ✅ v0.2 |
-| `compare_versions` | Unified diff between two versions of the same document. | ✅ v0.2 |
+| `compare_versions` | Server-side diff between two versions of the same document — text, spreadsheet cells, structured fields or document blocks. | ✅ v0.2 |
 | `explain_answer_sources` | Given a generated answer, return the chunks + lineage that grounded it. | 🟡 backend-dependent |
 | `verify_document_consistency` | Cross-check a document's sections for internal contradiction. | 🟡 backend-dependent |
 
@@ -448,7 +448,7 @@ See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/k
 - **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, prompt library.
 - **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
 - **v0.4** — hosted Streamable HTTP deployment guide (Fly.io, Cloud Run, Modal), per-tool rate limits.
-- **v0.5** — ~~hybrid search (dense + BM25 fusion)~~ ✅ shipped as `search_hybrid`; next up a `summarize_document` convenience tool.
+- **v0.5** — ~~hybrid search (dense + BM25 fusion)~~ ✅ shipped as `search_hybrid`; next up a `summarize_document` convenience tool and a `rerank_chunks` second pass.
 - **v1.0** — stable tool surface, semver guarantees, registry listing on [github.com/mcp](https://github.com/mcp).
 
 Three ways to influence the roadmap:
