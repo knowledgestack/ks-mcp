@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Ask the Knowledge Stack agent a question and return the final answer.\n\nWraps the backend's two-step ask flow (POST user message → SSE stream)\ninto a single tool call: assembles the streamed text, captures any\ninline citations, and returns once the agent emits ``message_end``.\nUse this when you want one grounded answer rather than running your own\nretrieval loop.\n\nCitations are read from the persisted message once the stream closes,\nso ``citations`` is populated even though the SSE protocol itself\ncarries only text.\n\nReturns ``AskResult(answer, citations[], thread_id, message_id, ...)``.\nPass the same ``thread_id`` back on a follow-up call to continue the\nconversation. For raw retrieval (without an LLM), use\n``search_knowledge`` / ``search_hybrid`` + ``cite`` instead; for\nschema-shaped output use ``extract``.",
+  "inputSchema": {
+    "$defs": {
+      "SupportedLanguage": {
+        "description": "SupportedLanguage",
+        "enum": [
+          "en",
+          "zh"
+        ],
+        "title": "SupportedLanguage",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "output_language": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SupportedLanguage"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Language the answer is written in (`en` or `zh`). Omit to use the tenant's configured default."
+      },
+      "question": {
+        "description": "Natural-language question to send to the KS agent.",
+        "maxLength": 8000,
+        "minLength": 1,
+        "title": "Question",
+        "type": "string"
+      },
+      "thread_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Reuse an existing thread for multi-turn follow-ups. Omit to start a fresh thread, auto-titled from ``question``.",
+        "title": "Thread Id"
+      },
+      "timeout_s": {
+        "default": 120.0,
+        "description": "Hard ceiling on the streaming wait. Beyond this we return whatever was assembled.",
+        "maximum": 600.0,
+        "minimum": 10.0,
+        "title": "Timeout S",
+        "type": "number"
+      }
+    },
+    "required": [
+      "question"
+    ],
+    "title": "askArguments",
+    "type": "object"
+  },
+  "name": "ask",
+  "outputSchema": {
+    "$defs": {
+      "AskCitation": {
+        "description": "Citation attached to the assistant message produced by an ``ask`` call.\n\nLighter than ``Citation``: the thread stream carries text only, so these are\nread from the persisted message's resolved citations after the stream closes.\nNo ``page_number`` — the backend does not resolve one on this path; use\n``cite(chunk_id)`` when you need a page-aware footnote.",
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Document Id"
+          },
+          "document_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Document Name"
+          },
+          "materialized_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Materialized Path"
+          },
+          "path_part_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "PDO id of the cited chunk — pass to `get_info` for ancestry.",
+            "title": "Path Part Id"
+          },
+          "quote": {
+            "description": "The quoted text from the chunk.",
+            "title": "Quote",
+            "type": "string"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Document version the citation was resolved against.",
+            "title": "Version Number"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "quote"
+        ],
+        "title": "AskCitation",
+        "type": "object"
+      }
+    },
+    "description": "Final assistant answer assembled from a thread streaming run.",
+    "properties": {
+      "answer": {
+        "description": "The agent's final assistant message text.",
+        "title": "Answer",
+        "type": "string"
+      },
+      "citations": {
+        "description": "Citations the agent emitted while answering. May be empty.",
+        "items": {
+          "$ref": "#/$defs/AskCitation"
+        },
+        "title": "Citations",
+        "type": "array"
+      },
+      "is_error": {
+        "default": false,
+        "description": "True if the agent hit a terminal error mid-stream; ``answer`` then contains the error message.",
+        "title": "Is Error",
+        "type": "boolean"
+      },
+      "message_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Assistant message id (use with `read_around`/`cite` if you need more context).",
+        "title": "Message Id"
+      },
+      "thread_id": {
+        "description": "Thread the conversation lives on (reuse for follow-ups).",
+        "format": "uuid",
+        "title": "Thread Id",
+        "type": "string"
+      },
+      "workflow_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Underlying agent workflow id; surfaced for debugging and audit.",
+        "title": "Workflow Id"
+      }
+    },
+    "required": [
+      "answer",
+      "thread_id"
+    ],
+    "title": "AskResult",
+    "type": "object"
+  }
+}

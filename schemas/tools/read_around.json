@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Return the ``radius`` chunks before and after an anchor chunk.\n\nGreat for pulling enough local context when a single chunk isn't\nenough — e.g. the answer hinges on a sentence that references \"the\ntable above\". Set ``within_section=False`` when the context you need\nprobably spills into the neighbouring section.\n\nOutput is ordered preceding → anchor → succeeding. Each neighbour is\nlabelled (``[ANCHOR]`` or ``[ctx N]``) and tagged with its\n``[chunk:UUID]`` so the agent can cite the right neighbour, not just\nthe anchor.",
+  "inputSchema": {
+    "properties": {
+      "chunk_id": {
+        "description": "Anchor chunk id (NOT a path_part_id).",
+        "format": "uuid",
+        "title": "Chunk Id",
+        "type": "string"
+      },
+      "radius": {
+        "default": 2,
+        "description": "How many chunks before AND after the anchor to include.",
+        "maximum": 10,
+        "minimum": 0,
+        "title": "Radius",
+        "type": "integer"
+      },
+      "within_section": {
+        "default": true,
+        "description": "True (default) stays inside the anchor's own section. False walks the whole document version in order, crossing section boundaries.",
+        "title": "Within Section",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "chunk_id"
+    ],
+    "title": "read_aroundArguments",
+    "type": "object"
+  },
+  "name": "read_around",
+  "outputSchema": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "read_aroundOutput",
+    "type": "object"
+  }
+}

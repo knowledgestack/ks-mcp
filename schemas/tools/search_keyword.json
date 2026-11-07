@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "BM25 / keyword search over the tenant's chunks.\n\nUse when the user mentions a specific term, name, identifier, or\nquoted phrase that needs an exact (or near-exact) match. For\nconceptual queries prefer ``search_knowledge``; for a blend of both\nuse ``search_hybrid``.\n\nEach hit carries a ``chunk_id`` and ``materialized_path``. Pair with\n``cite``/``read``/``read_around`` to ground an answer.",
+  "inputSchema": {
+    "$defs": {
+      "ChunkType": {
+        "enum": [
+          "TEXT",
+          "TABLE",
+          "IMAGE",
+          "HTML",
+          "UNKNOWN"
+        ],
+        "title": "ChunkType",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "chunk_types": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/ChunkType"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only return chunks of these types.",
+        "title": "Chunk Types"
+      },
+      "parent_path_part_ids": {
+        "anyOf": [
+          {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Restrict to descendants of these path-parts.",
+        "title": "Parent Path Part Ids"
+      },
+      "query": {
+        "description": "Keyword or phrase to match (BM25 full-text).",
+        "maxLength": 4000,
+        "minLength": 1,
+        "title": "Query",
+        "type": "string"
+      },
+      "tag_ids": {
+        "anyOf": [
+          {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only chunks whose document carries all these tags.",
+        "title": "Tag Ids"
+      },
+      "top_k": {
+        "default": 5,
+        "description": "Max number of chunks to return (1-50).",
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Top K",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "search_keywordArguments",
+    "type": "object"
+  },
+  "name": "search_keyword",
+  "outputSchema": {
+    "$defs": {
+      "ChunkHit": {
+        "properties": {
+          "chunk_id": {
+            "description": "Stable id for this chunk. Use it with `cite`, `read_around`, `view_chunk_image`, or `read` (which now also accepts a chunk_id). NOT the same as `path_part_id`.",
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "chunk_type": {
+            "$ref": "#/$defs/ChunkType",
+            "default": "TEXT"
+          },
+          "document_name": {
+            "description": "Name of the owning document.",
+            "title": "Document Name",
+            "type": "string"
+          },
+          "materialized_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Full root-to-leaf path of the chunk (e.g. `Folder/SubFolder/Document/Section/...`). Use this when displaying citations or grouping hits by document.",
+            "title": "Materialized Path"
+          },
+          "path_part_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "PDO id of the chunk node in the path tree. Pass to `get_info` for ancestry; do NOT confuse with `chunk_id` — they are different UUIDs.",
+            "title": "Path Part Id"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Relevance score from the search backend (higher = better).",
+            "title": "Score"
+          },
+          "text": {
+            "description": "Raw text of the chunk.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "document_name",
+          "text"
+        ],
+        "title": "ChunkHit",
+        "type": "object"
+      },
+      "ChunkType": {
+        "enum": [
+          "TEXT",
+          "TABLE",
+          "IMAGE",
+          "HTML",
+          "UNKNOWN"
+        ],
+        "title": "ChunkType",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "hits": {
+        "items": {
+          "$ref": "#/$defs/ChunkHit"
+        },
+        "title": "Hits",
+        "type": "array"
+      }
+    },
+    "required": [
+      "hits"
+    ],
+    "title": "SearchResult",
+    "type": "object"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Return the caller's tenant metadata: id, name, default language, timezone.\n\nCached per process. Useful as the first call when the user's question\ndepends on locale (\"translate this to our default language\") or the\ntenant's name (\"write an internal email at <tenant>\").",
+  "inputSchema": {
+    "properties": {},
+    "title": "get_organization_infoArguments",
+    "type": "object"
+  },
+  "name": "get_organization_info",
+  "outputSchema": {
+    "properties": {
+      "default_language": {
+        "description": "ISO-639 code, e.g. 'en'.",
+        "title": "Default Language",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "tenant_id": {
+        "format": "uuid",
+        "title": "Tenant Id",
+        "type": "string"
+      },
+      "timezone": {
+        "description": "IANA tz, e.g. 'America/New_York'.",
+        "title": "Timezone",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tenant_id",
+      "name",
+      "default_language",
+      "timezone"
+    ],
+    "title": "OrganizationInfo",
+    "type": "object"
+  }
+}

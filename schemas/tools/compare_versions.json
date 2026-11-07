@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Diff two versions of the same document, computed server-side.\n\nAnswers \"what changed in v5 vs v4?\" without pulling either version's\nchunks into this process: the backend diffs on the fly and returns only\nthe changes, so a 900-page contract costs one small response instead of\ntwo full document loads.\n\nThe backend picks the differ from the document's type, so read\n``diff_format`` and ``unit`` before interpreting the counts — a\nspreadsheet reports changed *cells*, a Word-style document reports\nchanged *blocks*, and plain text reports *lines*. ``rendered_diff`` is a\nunified diff for text and a one-line-per-change list otherwise.\n\nCheck ``truncated`` and ``degraded`` before summarizing: a truncated\ndiff's counts describe only what was returned, and a degraded one means\nthe backend fell back to a weaker differ. For per-chunk provenance\n(\"where did this sentence come from?\") use ``trace_chunk_lineage``.\n\nNote: viewing a diff is a privileged read, so the backend records a\n``document.diff.viewed`` audit event — much like downloading the file.",
+  "inputSchema": {
+    "properties": {
+      "document_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Optional: the owning document, echoed back for your own bookkeeping. Not needed to compute the diff — the server resolves the document from the version id.",
+        "title": "Document Id"
+      },
+      "from_version_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Older / baseline version id (the left side). Omit to diff against the immediate predecessor, which is what 'what changed in the latest version?' usually means.",
+        "title": "From Version Id"
+      },
+      "to_version_id": {
+        "description": "Newer / target version id (the right side of the diff).",
+        "format": "uuid",
+        "title": "To Version Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "to_version_id"
+    ],
+    "title": "compare_versionsArguments",
+    "type": "object"
+  },
+  "name": "compare_versions",
+  "outputSchema": {
+    "description": "Server-computed diff between two versions of one document.\n\nThe counts are whatever the backend's differ reports for the document's\nnative shape, so they are *not* always line counts: a spreadsheet diff\ncounts cells, a structured (JSON/CSV-ish) diff counts field paths, and a\nWord-style document diff counts blocks. ``unit`` names what was counted so\nan agent doesn't have to guess.",
+    "properties": {
+      "added": {
+        "description": "Units present only on the right side.",
+        "title": "Added",
+        "type": "integer"
+      },
+      "degraded": {
+        "default": false,
+        "description": "True when the backend could not run its preferred differ and fell back (e.g. undecodable source). Read ``degraded_reason`` before trusting the diff.",
+        "title": "Degraded",
+        "type": "boolean"
+      },
+      "degraded_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why the diff was degraded, when it was.",
+        "title": "Degraded Reason"
+      },
+      "diff_format": {
+        "description": "Which differ ran, chosen by the backend from the document's type: `text` | `cells` (spreadsheets) | `structured` (JSON/CSV-ish) | `document` (Word-style block diff).",
+        "title": "Diff Format",
+        "type": "string"
+      },
+      "document_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Echo of the ``document_id`` you passed, if any. The diff endpoint is version-scoped and resolves the document itself, so this is a convenience echo rather than something the server returned.",
+        "title": "Document Id"
+      },
+      "from_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Human-facing version number of the left side.",
+        "title": "From Version"
+      },
+      "from_version_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Older / left version actually diffed. Null when ``to_version_id`` is the document's first version (it is then diffed against empty).",
+        "title": "From Version Id"
+      },
+      "modified": {
+        "description": "Units present on both sides with different content.",
+        "title": "Modified",
+        "type": "integer"
+      },
+      "removed": {
+        "description": "Units present only on the left side.",
+        "title": "Removed",
+        "type": "integer"
+      },
+      "rendered_diff": {
+        "description": "Human-readable rendering of the changes: a unified diff for `text`, otherwise one line per change. Capped in length; see ``truncated``.",
+        "title": "Rendered Diff",
+        "type": "string"
+      },
+      "summary": {
+        "description": "One-line plain-English summary of the comparison.",
+        "title": "Summary",
+        "type": "string"
+      },
+      "to_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Human-facing version number of the right side.",
+        "title": "To Version"
+      },
+      "to_version_id": {
+        "description": "Newer / right version that was diffed.",
+        "format": "uuid",
+        "title": "To Version Id",
+        "type": "string"
+      },
+      "truncated": {
+        "default": false,
+        "description": "True when the backend capped the diff payload. Counts cover what was returned, not the whole document — do not state totals as final.",
+        "title": "Truncated",
+        "type": "boolean"
+      },
+      "unit": {
+        "description": "What ``added``/``removed``/``modified`` count: lines, cells, fields or blocks.",
+        "title": "Unit",
+        "type": "string"
+      }
+    },
+    "required": [
+      "to_version_id",
+      "diff_format",
+      "unit",
+      "added",
+      "removed",
+      "modified",
+      "rendered_diff",
+      "summary"
+    ],
+    "title": "VersionDiffResult",
+    "type": "object"
+  }
+}
