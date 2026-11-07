@@ -18,6 +18,8 @@ EXPECTED_TOOLS = {
     # Phase 2 provenance:
     "trace_chunk_lineage",
     "compare_versions",
+    # Phase 3 workflows:
+    "get_workflow_status",
 }
 
 
@@ -76,7 +78,7 @@ async def test_every_tool_is_async() -> None:
     """
     import inspect
 
-    from ks_mcp.server import _MODULES, build_server
+    from ks_mcp.server import build_server
 
     mcp = build_server()
     tools = await mcp.list_tools()
@@ -88,7 +90,26 @@ async def test_every_tool_is_async() -> None:
     assert not sync_tools, (
         f"These tools are sync and will leak un-awaited coroutines: {sync_tools}"
     )
-    assert len(_MODULES) == 8
+
+
+async def test_every_tool_module_is_registered() -> None:
+    """A tool module left out of ``_MODULES`` is invisible with no error anywhere.
+
+    This used to be a hardcoded module count, which flagged the drift but not
+    the cause — and had to be bumped by hand every time. Comparing against
+    what's actually on disk names the module you forgot.
+    """
+    import pkgutil
+
+    from ks_mcp import tools
+    from ks_mcp.server import _MODULES
+
+    on_disk = {m.name for m in pkgutil.iter_modules(tools.__path__)}
+    registered = {m.__name__.rsplit(".", 1)[-1] for m in _MODULES}
+    assert on_disk == registered, (
+        f"unregistered tool modules: {sorted(on_disk - registered)}; "
+        f"registered but missing from disk: {sorted(registered - on_disk)}"
+    )
 
 
 async def test_no_tool_calls_a_sync_sdk_variant() -> None:
