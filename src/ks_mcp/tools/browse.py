@@ -14,15 +14,22 @@ from ks_mcp.errors import is_not_found, rest_to_mcp
 from ks_mcp.schema import PathPartAncestry, PathPartInfo
 
 
+def _normalize_part_type(value: Any) -> str:
+    text = str(getattr(value, "value", None) or value or "")
+    return text.removeprefix("PartType.").upper()
+
+
 def _pp_info(pp: Any) -> PathPartInfo | None:
+    # List endpoints return discriminated unions (FolderResponse |
+    # DocumentResponse | …); every member carries `path_part_id`.
     inner = getattr(pp, "actual_instance", None) or pp
-    path_part_id = getattr(inner, "path_part_id", None) or getattr(inner, "id", None)
+    path_part_id = getattr(inner, "path_part_id", None)
     if path_part_id is None:
         return None
     return PathPartInfo(
         path_part_id=path_part_id,
-        name=getattr(inner, "name", ""),
-        part_type=str(getattr(inner, "part_type", "UNKNOWN")),
+        name=getattr(inner, "name", "") or "",
+        part_type=_normalize_part_type(getattr(inner, "part_type", "")) or "UNKNOWN",
         materialized_path=getattr(inner, "materialized_path", None),
     )
 
@@ -36,34 +43,28 @@ def _filter_pp_infos(items: Any) -> list[PathPartInfo]:
     return out
 
 
-def _resolve_folder_id(client: Any, folder_id: UUID) -> UUID:
+async def _resolve_folder_id(client: ksapi.ApiClient, folder_id: UUID) -> UUID:
     """Accept either a folder id or a folder path_part id.
 
     Agent loops often reuse the ``path_part_id`` returned by ``list_contents``.
     The KS folders API expects the underlying folder metadata id for nested
     listings, so resolve path-part ids to the backing folder id when possible.
     """
-    path_parts = PathPartsApi(client)
     try:
-        pp = path_parts.get_path_part(path_part_id=folder_id)
+        pp = await PathPartsApi(client).get_path_part(path_part_id=folder_id)
     except ksapi.ApiException as exc:
         if is_not_found(exc):
             return folder_id
         raise rest_to_mcp(exc) from exc
 
-    part_type = str(getattr(pp, "part_type", ""))
-    if part_type.startswith("PartType."):
-        part_type = part_type.removeprefix("PartType.")
-    if part_type != "FOLDER":
+    if _normalize_part_type(pp.part_type) != "FOLDER":
         return folder_id
-
-    metadata_obj_id = getattr(pp, "metadata_obj_id", None)
-    return metadata_obj_id or folder_id
+    return pp.metadata_obj_id or folder_id
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def list_contents(
+    async def list_contents(
         folder_id: Annotated[
             UUID | None,
             Field(
@@ -73,6 +74,9 @@ def register(mcp: FastMCP) -> None:
                 ),
             ),
         ] = None,
+        limit: Annotated[
+            int, Field(description="Max entries to return (1-200).", ge=1, le=200)
+        ] = 100,
     ) -> list[PathPartInfo]:
         """List the immediate children of a folder, like ``ls``.
 
@@ -87,23 +91,27 @@ def register(mcp: FastMCP) -> None:
         folders = FoldersApi(client)
         try:
             if folder_id is None:
-                root = folders.list_folders()
+                root = await folders.list_folders(limit=limit)
             else:
-                resolved_folder_id = _resolve_folder_id(client, folder_id)
-                root = folders.list_folder_contents(folder_id=resolved_folder_id)
+                resolved_folder_id = await _resolve_folder_id(client, folder_id)
+                root = await folders.list_folder_contents(
+                    folder_id=resolved_folder_id, limit=limit
+                )
         except ksapi.ApiException as exc:
             if folder_id is not None and is_not_found(exc):
                 # Agents frequently recycle stale or hallucinated folder ids.
                 # Falling back to tenant root keeps discovery moving without
                 # requiring the caller to already know the folder structure.
-                root = folders.list_folders()
+                try:
+                    root = await folders.list_folders(limit=limit)
+                except ksapi.ApiException as inner:
+                    raise rest_to_mcp(inner) from inner
             else:
                 raise rest_to_mcp(exc) from exc
-        items = getattr(root, "items", None) or root or []
-        return _filter_pp_infos(items)
+        return _filter_pp_infos(root.items)
 
     @mcp.tool()
-    def find(
+    async def find(
         query: Annotated[
             str,
             Field(
@@ -116,6 +124,9 @@ def register(mcp: FastMCP) -> None:
                 description="Restrict search to descendants of this folder. Omit for whole tenant."
             ),
         ] = None,
+        limit: Annotated[
+            int, Field(description="Max entries to return (1-200).", ge=1, le=200)
+        ] = 50,
     ) -> list[PathPartInfo]:
         """Fuzzy-search path-parts (folders, documents, sections) by name.
 
@@ -124,17 +135,19 @@ def register(mcp: FastMCP) -> None:
         a document, use ``search_keyword`` instead — ``find`` only looks at
         names.
         """
-        client = get_api_client()
-        folders = FoldersApi(client)
+        folders = FoldersApi(get_api_client())
         try:
-            result = folders.search_items(name_like=query, parent_path_part_id=parent_path_part_id)
+            result = await folders.search_items(
+                name_like=query,
+                parent_path_part_id=parent_path_part_id,
+                limit=limit,
+            )
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
-        items = getattr(result, "items", None) or result or []
-        return _filter_pp_infos(items)
+        return _filter_pp_infos(result.items)
 
     @mcp.tool()
-    def get_info(
+    async def get_info(
         path_part_id: Annotated[
             UUID, Field(description="Any PDO id — folder, document, section, or chunk.")
         ],
@@ -146,23 +159,19 @@ def register(mcp: FastMCP) -> None:
         list is ordered root → … → parent (excluding the node itself), so the
         last element is the immediate parent.
         """
-        client = get_api_client()
-        api = PathPartsApi(client)
+        api = PathPartsApi(get_api_client())
         try:
-            node = api.get_path_part(path_part_id=path_part_id)
-            ancestry_resp = api.get_path_part_ancestry(path_part_id=path_part_id)
+            node = await api.get_path_part(path_part_id=path_part_id)
+            ancestry_resp = await api.get_path_part_ancestry(path_part_id=path_part_id)
         except ksapi.ApiException as exc:
             if is_not_found(exc):
                 raise ValueError("path_part not found") from exc
             raise rest_to_mcp(exc) from exc
 
-        ancestry_items = (
-            getattr(ancestry_resp, "ancestors", None) or getattr(ancestry_resp, "items", None) or []
-        )
         node_info = _pp_info(node)
         if node_info is None:
             raise ValueError("path_part lookup returned no id")
         return PathPartAncestry(
             node=node_info,
-            ancestry=_filter_pp_infos(ancestry_items),
+            ancestry=_filter_pp_infos(ancestry_resp.ancestors),
         )

@@ -1,13 +1,22 @@
 """Unit tests for the search tool: request shape + scored hit projection."""
 
-from types import SimpleNamespace
+from typing import Any
 from uuid import UUID
 
 import pytest
+from conftest import scored_chunk_payload
+from ksapi.models.scored_chunk_response import ScoredChunkResponse
 from ksapi.models.search_type import SearchType
 
 from ks_mcp.schema import ChunkType
 from ks_mcp.tools.search import _build_search_request, _hit_from_scored_chunk
+
+
+def _scored(**overrides: Any) -> ScoredChunkResponse:
+    """A real ScoredChunkResponse, so a schema change fails the test loudly."""
+    return ScoredChunkResponse.model_validate(
+        scored_chunk_payload(str(_CHUNK_ID), **overrides)
+    )
 
 _PARENT_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 _TAG_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -44,65 +53,48 @@ def test_build_search_request_with_filters() -> None:
 
 
 def test_hit_from_scored_chunk_full_payload() -> None:
-    document = SimpleNamespace(name="The Onboarding Handbook")
-    scored = SimpleNamespace(
-        id=_CHUNK_ID,
-        path_part_id=_PATH_PART_ID,
-        content="The onboarding flow has three steps.",
-        chunk_type=ChunkType.TEXT.value,
-        score=0.87,
-        materialized_path="HR/Handbooks/Onboarding/...",
-        document=document,
+    hit = _hit_from_scored_chunk(
+        _scored(
+            path_part_id=str(_PATH_PART_ID),
+            document={
+                "id": "00000000-0000-0000-0000-0000000000b1",
+                "name": "The Onboarding Handbook",
+                "document_type": "PDF",
+                "document_origin": "SOURCE",
+            },
+        )
     )
-    hit = _hit_from_scored_chunk(scored)
     assert hit.chunk_id == _CHUNK_ID
     assert hit.document_name == "The Onboarding Handbook"
     assert hit.text == "The onboarding flow has three steps."
     assert hit.score == pytest.approx(0.87)
     assert hit.chunk_type == ChunkType.TEXT
     assert hit.path_part_id == _PATH_PART_ID
-    assert hit.materialized_path == "HR/Handbooks/Onboarding/..."
+    assert hit.materialized_path == "HR/Handbooks/Onboarding"
 
 
-def test_hit_from_scored_chunk_falls_back_to_text_field() -> None:
-    # Older SDK builds exposed body on `.text`; we tolerate either.
-    scored = SimpleNamespace(
-        id=_CHUNK_ID,
-        path_part_id=None,
-        text="legacy body",
-        chunk_type="TEXT",
-        score=None,
-        document=None,
-    )
-    hit = _hit_from_scored_chunk(scored)
-    assert hit.text == "legacy body"
+def test_hit_from_scored_chunk_without_document_has_empty_name() -> None:
+    # `with_document=False` responses carry no document; the name degrades to "".
+    hit = _hit_from_scored_chunk(_scored(document=None))
     assert hit.document_name == ""
-    assert hit.path_part_id is None
-    assert hit.materialized_path is None
+    assert hit.text == "The onboarding flow has three steps."
+
+
+def test_hit_from_scored_chunk_handles_each_chunk_type() -> None:
+    for wire_value, expected in [
+        ("TEXT", ChunkType.TEXT),
+        ("TABLE", ChunkType.TABLE),
+        ("IMAGE", ChunkType.IMAGE),
+        ("HTML", ChunkType.HTML),
+        ("UNKNOWN", ChunkType.UNKNOWN),
+    ]:
+        hit = _hit_from_scored_chunk(_scored(chunk_type=wire_value))
+        assert hit.chunk_type is expected
 
 
 def test_hit_from_scored_chunk_unknown_chunk_type_degrades_to_unknown() -> None:
-    scored = SimpleNamespace(
-        id=_CHUNK_ID,
-        path_part_id=None,
-        content="x",
-        chunk_type="WAT",
-        score=0.1,
-        document=None,
-    )
-    hit = _hit_from_scored_chunk(scored)
-    assert hit.chunk_type == ChunkType.UNKNOWN
-
-
-def test_hit_from_scored_chunk_handles_enum_chunk_type() -> None:
-    # ksapi sometimes hands back an Enum, sometimes a bare string. Both must work.
-    scored = SimpleNamespace(
-        id=_CHUNK_ID,
-        path_part_id=None,
-        content="x",
-        chunk_type=SimpleNamespace(value="TABLE"),
-        score=0.1,
-        document=None,
-    )
-    hit = _hit_from_scored_chunk(scored)
-    assert hit.chunk_type == ChunkType.TABLE
+    # The SDK enum would reject "WAT", so bypass validation to simulate a
+    # backend that has added a chunk type we don't know about yet.
+    scored = _scored()
+    object.__setattr__(scored, "chunk_type", "WAT")
+    assert _hit_from_scored_chunk(scored).chunk_type == ChunkType.UNKNOWN

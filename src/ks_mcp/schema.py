@@ -6,6 +6,7 @@ per-argument documentation. Good descriptions here == good tool use.
 """
 
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -58,86 +59,13 @@ class PathPartInfo(BaseModel):
     path_part_id: UUID
     name: str
     part_type: str = Field(
-        ..., description="One of FOLDER | DOCUMENT | SECTION | CHUNK | THREAD_MESSAGE."
-    )
-    materialized_path: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Tool inputs
-# ---------------------------------------------------------------------------
-
-
-class SearchInput(BaseModel):
-    query: str = Field(
-        ...,
-        min_length=1,
-        max_length=4_000,
-        description="Natural-language query for semantic search, or keyword phrase for BM25.",
-    )
-    top_k: int = Field(default=5, ge=1, le=50, description="Maximum number of chunks to return.")
-    parent_path_part_ids: list[UUID] | None = Field(
-        default=None,
-        description="Restrict search to descendants of these path-parts. None = whole tenant.",
-    )
-    tag_ids: list[UUID] | None = Field(
-        default=None,
-        description="Only include chunks whose owning document carries all these tags.",
-    )
-
-
-class ReadInput(BaseModel):
-    path_part_id: UUID = Field(
         ...,
         description=(
-            "Any PDO identifier — folder, document, section, or chunk path-part. The tool "
-            "dispatches on part type, and falls back to fetching as a chunk_id on 404."
+            "Node kind, e.g. FOLDER | DOCUMENT | SECTION | CHUNK (the backend's PartType "
+            "enum also covers DATA_SOURCE, SKILL, EMAIL_THREAD and more)."
         ),
     )
-    max_chars: int = Field(
-        default=4_000,
-        ge=100,
-        le=50_000,
-        description="Truncate returned text to this many characters.",
-    )
-
-
-class ReadAroundInput(BaseModel):
-    chunk_id: UUID = Field(..., description="Anchor chunk.")
-    radius: int = Field(
-        default=2,
-        ge=0,
-        le=10,
-        description="Number of chunks before AND after the anchor to include.",
-    )
-
-
-class ListContentsInput(BaseModel):
-    folder_id: UUID | None = Field(
-        default=None,
-        description="Folder PDO id. Omit to list root-level folders in the tenant.",
-    )
-
-
-class FindInput(BaseModel):
-    query: str = Field(
-        ...,
-        min_length=1,
-        max_length=256,
-        description="Fuzzy-match substring of the path-part's name.",
-    )
-    parent_path_part_ids: list[UUID] | None = Field(
-        default=None,
-        description="Restrict to descendants of these path-parts.",
-    )
-
-
-class GetInfoInput(BaseModel):
-    path_part_id: UUID = Field(..., description="PDO id to describe.")
-
-
-class ViewChunkImageInput(BaseModel):
-    chunk_id: UUID = Field(..., description="IMAGE-type chunk to materialize.")
+    materialized_path: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -205,10 +133,12 @@ class Citation(BaseModel):
 
 
 class AskCitation(BaseModel):
-    """Citation surfaced inline by the KS agent during an ``ask`` call.
+    """Citation attached to the assistant message produced by an ``ask`` call.
 
-    Lighter than ``Citation`` — the agent emits these directly, so we expose
-    only what the streaming protocol provides without an extra round-trip.
+    Lighter than ``Citation``: the thread stream carries text only, so these are
+    read from the persisted message's resolved citations after the stream closes.
+    No ``page_number`` — the backend does not resolve one on this path; use
+    ``cite(chunk_id)`` when you need a page-aware footnote.
     """
 
     chunk_id: UUID
@@ -216,7 +146,12 @@ class AskCitation(BaseModel):
     document_id: UUID | None = None
     document_name: str | None = None
     materialized_path: str | None = None
-    page_number: int | None = None
+    path_part_id: UUID | None = Field(
+        default=None, description="PDO id of the cited chunk — pass to `get_info` for ancestry."
+    )
+    version_number: int | None = Field(
+        default=None, description="Document version the citation was resolved against."
+    )
 
 
 class AskResult(BaseModel):
@@ -241,4 +176,16 @@ class AskResult(BaseModel):
     is_error: bool = Field(
         default=False,
         description="True if the agent hit a terminal error mid-stream; ``answer`` then contains the error message.",
+    )
+
+
+class ExtractResult(BaseModel):
+    """Schema-conforming object returned by ``extract``."""
+
+    structured: dict[str, Any] = Field(
+        ...,
+        description=(
+            "The extracted object. Conforms to the JSON Schema passed as `output_schema` "
+            "(or stored at `schema_path_part_id`)."
+        ),
     )

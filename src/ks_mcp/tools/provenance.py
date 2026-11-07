@@ -6,7 +6,7 @@ changed between two versions — not just retrieve text.
 """
 
 import difflib
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID
 
 import ksapi
@@ -18,17 +18,31 @@ from pydantic import BaseModel, Field
 from ks_mcp.client import get_api_client
 from ks_mcp.errors import rest_to_mcp
 
+_PAGE_SIZE = 100
+
 
 class LineageEdge(BaseModel):
-    parent_chunk_id: UUID | None = None
-    child_chunk_id: UUID | None = None
-    relation: str | None = None
+    """One parent → child derivation step in a chunk's lineage graph."""
+
+    chunk_id: UUID = Field(..., description="The derived (child) chunk.")
+    parent_chunk_id: UUID | None = Field(
+        default=None, description="The chunk it was derived from. None marks a root / first ingest."
+    )
+
+
+class LineageNode(BaseModel):
+    """A chunk that participates in the lineage graph, with a text preview."""
+
+    chunk_id: UUID
+    chunk_type: str | None = None
     created_at: str | None = None
+    preview: str = Field(default="", description="First ~160 chars of the chunk body.")
 
 
 class LineageResult(BaseModel):
     chunk_id: UUID
     edges: list[LineageEdge]
+    nodes: list[LineageNode]
     summary: str
 
 
@@ -41,39 +55,42 @@ class VersionDiffResult(BaseModel):
     unified_diff: str
 
 
-def _flatten_version_text(client: ksapi.ApiClient, version_id: UUID, limit: int = 500) -> list[str]:
+async def _flatten_version_text(
+    client: ksapi.ApiClient, version_id: UUID, limit: int = 500
+) -> list[str]:
     """Materialize a version's chunk texts, in order, so we can diff them."""
     api = DocumentVersionsApi(client)
     lines: list[str] = []
     offset = 0
     while True:
-        contents: Any = api.get_document_version_contents(
+        contents = await api.get_document_version_contents(
             version_id=version_id,
-            limit=100,
+            limit=_PAGE_SIZE,
             offset=offset,
         )
-        items = getattr(contents, "items", None) or []
+        items = contents.items or []
         if not items:
             break
         for item in items:
             inner = getattr(item, "actual_instance", None) or item
-            # ksapi's ChunkContentItem stores body on ``.content``; tolerate ``.text``
-            # for older SDK builds.
-            text = getattr(inner, "content", None) or getattr(inner, "text", "") or ""
+            text = getattr(inner, "content", "") or ""
             if text:
                 lines.append(text.strip())
-        if len(items) < 100 or len(lines) >= limit:
+        if len(items) < _PAGE_SIZE or len(lines) >= limit:
             break
-        offset += 100
+        offset += _PAGE_SIZE
     return lines[:limit]
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def trace_chunk_lineage(
+    async def trace_chunk_lineage(
         chunk_id: Annotated[
             UUID, Field(description="The chunk whose lineage you want to inspect.")
         ],
+        max_depth: Annotated[
+            int, Field(description="How many derivation hops to walk (1-10).", ge=1, le=10)
+        ] = 5,
     ) -> LineageResult:
         """Return the lineage graph for a chunk (merge/split/re-embed history).
 
@@ -82,33 +99,40 @@ def register(mcp: FastMCP) -> None:
         exists. Use this when a downstream answer cites a chunk and you need
         to justify provenance — for example to answer "did this fact survive
         from v3, or did it appear in v4?".
+
+        ``edges`` are parent → child derivation steps; an edge whose
+        ``parent_chunk_id`` is null marks an original ingest. ``nodes`` carries
+        a short preview of each chunk in the graph so you can see what changed
+        without a second round-trip.
         """
-        client = get_api_client()
-        api = ChunkLineagesApi(client)
+        api = ChunkLineagesApi(get_api_client())
         try:
-            lineage: Any = api.get_chunk_lineage(chunk_id=chunk_id)
+            lineage = await api.get_chunk_lineage(chunk_id=chunk_id, max_depth=max_depth)
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 
-        raw_edges = getattr(lineage, "edges", None) or getattr(lineage, "items", None) or []
         edges = [
-            LineageEdge(
-                parent_chunk_id=getattr(e, "parent_chunk_id", None),
-                child_chunk_id=getattr(e, "child_chunk_id", None),
-                relation=getattr(e, "relation", None) or getattr(e, "kind", None),
-                created_at=str(getattr(e, "created_at", "") or "") or None,
+            LineageEdge(chunk_id=e.chunk_id, parent_chunk_id=e.parent_chunk_id)
+            for e in lineage.edges or []
+        ]
+        nodes = [
+            LineageNode(
+                chunk_id=n.id,
+                chunk_type=getattr(n.chunk_type, "value", None) or str(n.chunk_type or "") or None,
+                created_at=str(n.created_at) if n.created_at else None,
+                preview=((n.content or "").strip()[:160]),
             )
-            for e in raw_edges
+            for n in lineage.nodes or []
         ]
         summary = (
-            f"{len(edges)} lineage edge(s) for chunk {chunk_id}."
+            f"{len(edges)} lineage edge(s) across {len(nodes)} chunk(s) for {chunk_id}."
             if edges
             else f"No lineage recorded for chunk {chunk_id} (original ingest?)."
         )
-        return LineageResult(chunk_id=chunk_id, edges=edges, summary=summary)
+        return LineageResult(chunk_id=chunk_id, edges=edges, nodes=nodes, summary=summary)
 
     @mcp.tool()
-    def compare_versions(
+    async def compare_versions(
         document_id: Annotated[
             UUID, Field(description="Document whose versions you want to diff.")
         ],
@@ -129,8 +153,8 @@ def register(mcp: FastMCP) -> None:
         """
         client = get_api_client()
         try:
-            before = _flatten_version_text(client, from_version_id, limit=max_chunks_per_side)
-            after = _flatten_version_text(client, to_version_id, limit=max_chunks_per_side)
+            before = await _flatten_version_text(client, from_version_id, limit=max_chunks_per_side)
+            after = await _flatten_version_text(client, to_version_id, limit=max_chunks_per_side)
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 

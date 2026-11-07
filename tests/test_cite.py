@@ -1,11 +1,10 @@
 """Unit tests for ``cite`` tool helpers and the page-number ancestry walk."""
 
-from types import SimpleNamespace
-from typing import Any, cast
 from uuid import UUID
 
-import ksapi
+from conftest import FakeKS, path_part_payload, section_payload
 
+from ks_mcp.client import get_api_client
 from ks_mcp.tools.cite import _normalize_part_type, _page_number_from_ancestry, _snippet
 
 _PATH_PART_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -45,96 +44,77 @@ def test_normalize_part_type_strips_enum_prefix() -> None:
     assert _normalize_part_type(None) == ""
 
 
-class _FakeAncestor:
-    """Minimal stand-in for an ancestor item the SDK might return."""
+# ---------------------------------------------------------------------------
+# The ancestry walk runs against the local KS stand-in rather than hand-rolled
+# stubs, so the real AncestryResponse / SectionResponse shapes are exercised.
+# ---------------------------------------------------------------------------
 
-    def __init__(self, part_type: str, metadata_obj_id: UUID | None = None) -> None:
-        self.part_type = part_type
-        self.metadata_obj_id = metadata_obj_id
-
-
-class _FakeAncestryResp:
-    def __init__(self, ancestors: list[_FakeAncestor]) -> None:
-        self.ancestors = ancestors
+_SHALLOW_SECTION_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
-class _FakeSection:
-    def __init__(self, page_number: int | None) -> None:
-        self.page_number = page_number
+async def test_page_number_from_ancestry_returns_none_when_no_path_part(ks: FakeKS) -> None:
+    assert await _page_number_from_ancestry(get_api_client(), None) is None
+    assert ks.requests == []
 
 
-class _StubPathPartsApi:
-    def __init__(self, ancestry: Any | Exception) -> None:
-        self._ancestry = ancestry
+async def test_page_number_from_ancestry_picks_deepest_section(ks: FakeKS) -> None:
+    pp = str(_PATH_PART_ID)
+    ks.on(
+        "GET",
+        rf"/v1/path-parts/{pp}/ancestry",
+        json_body={
+            "ancestors": [
+                path_part_payload(pp, "FOLDER", str(_SHALLOW_SECTION_ID)),
+                path_part_payload(pp, "SECTION", str(_SHALLOW_SECTION_ID)),
+                path_part_payload(pp, "SECTION", str(_SECTION_METADATA_ID)),
+            ]
+        },
+    )
+    ks.on(
+        "GET",
+        rf"/v1/sections/{_SECTION_METADATA_ID}",
+        json_body=section_payload(str(_SECTION_METADATA_ID), 42),
+    )
 
-    def get_path_part_ancestry(self, path_part_id: UUID) -> Any:
-        if isinstance(self._ancestry, Exception):
-            raise self._ancestry
-        return self._ancestry
-
-
-class _StubSectionsApi:
-    def __init__(self, section: Any | Exception) -> None:
-        self._section = section
-
-    def get_section(self, section_id: UUID) -> Any:
-        if isinstance(self._section, Exception):
-            raise self._section
-        return self._section
-
-
-def test_page_number_from_ancestry_returns_none_when_no_path_part() -> None:
-    client = cast(ksapi.ApiClient, _FakeClient(None, None))
-    assert _page_number_from_ancestry(client, None) is None
+    assert await _page_number_from_ancestry(get_api_client(), _PATH_PART_ID) == 42
 
 
-def test_page_number_from_ancestry_picks_deepest_section(monkeypatch: Any) -> None:
-    ancestors = [
-        _FakeAncestor("FOLDER"),
-        _FakeAncestor("DOCUMENT"),
-        _FakeAncestor("SECTION", UUID("00000000-0000-0000-0000-0000000000aa")),
-        _FakeAncestor("SECTION", _SECTION_METADATA_ID),
-    ]
-    section = _FakeSection(page_number=42)
-    client = cast(ksapi.ApiClient, _FakeClient(_FakeAncestryResp(ancestors), section))
+async def test_page_number_from_ancestry_returns_none_when_no_section(ks: FakeKS) -> None:
+    pp = str(_PATH_PART_ID)
+    ks.on(
+        "GET",
+        rf"/v1/path-parts/{pp}/ancestry",
+        json_body={"ancestors": [path_part_payload(pp, "FOLDER", str(_SHALLOW_SECTION_ID))]},
+    )
 
-    import ks_mcp.tools.cite as cite_module
-
-    monkeypatch.setattr(cite_module, "PathPartsApi", lambda c: _StubPathPartsApi(c.ancestry))
-    monkeypatch.setattr(cite_module, "SectionsApi", lambda c: _StubSectionsApi(c.section))
-
-    page = _page_number_from_ancestry(client, _PATH_PART_ID)
-    assert page == 42
+    assert await _page_number_from_ancestry(get_api_client(), _PATH_PART_ID) is None
 
 
-def test_page_number_from_ancestry_returns_none_when_no_section(monkeypatch: Any) -> None:
-    ancestors = [_FakeAncestor("FOLDER"), _FakeAncestor("DOCUMENT")]
-    client = cast(ksapi.ApiClient, _FakeClient(_FakeAncestryResp(ancestors), None))
-
-    import ks_mcp.tools.cite as cite_module
-
-    monkeypatch.setattr(cite_module, "PathPartsApi", lambda c: _StubPathPartsApi(c.ancestry))
-    monkeypatch.setattr(cite_module, "SectionsApi", lambda c: _StubSectionsApi(c.section))
-
-    assert _page_number_from_ancestry(client, _PATH_PART_ID) is None
-
-
-def test_page_number_from_ancestry_swallows_api_errors(monkeypatch: Any) -> None:
-    err = ksapi.ApiException(status=500, reason="boom")
-    client = cast(ksapi.ApiClient, _FakeClient(err, None))
-
-    import ks_mcp.tools.cite as cite_module
-
-    monkeypatch.setattr(cite_module, "PathPartsApi", lambda c: _StubPathPartsApi(c.ancestry))
-    monkeypatch.setattr(cite_module, "SectionsApi", lambda c: _StubSectionsApi(c.section))
+async def test_page_number_from_ancestry_swallows_api_errors(ks: FakeKS) -> None:
+    ks.on(
+        "GET",
+        rf"/v1/path-parts/{_PATH_PART_ID}/ancestry",
+        status=500,
+        json_body={"detail": "boom", "code": "internal_error"},
+    )
 
     # Errors fetching ancestry / section should degrade to None, not propagate —
     # the caller treats page_number as best-effort metadata.
-    assert _page_number_from_ancestry(client, _PATH_PART_ID) is None
+    assert await _page_number_from_ancestry(get_api_client(), _PATH_PART_ID) is None
 
 
-class _FakeClient(SimpleNamespace):
-    """Carries the ancestry / section stubs into the patched API constructors."""
+async def test_page_number_none_when_section_lookup_fails(ks: FakeKS) -> None:
+    pp = str(_PATH_PART_ID)
+    ks.on(
+        "GET",
+        rf"/v1/path-parts/{pp}/ancestry",
+        json_body={"ancestors": [path_part_payload(pp, "SECTION", str(_SECTION_METADATA_ID))]},
+    )
+    ks.on(
+        "GET",
+        rf"/v1/sections/{_SECTION_METADATA_ID}",
+        status=404,
+        json_body={"detail": "gone", "code": "not_found"},
+    )
 
-    def __init__(self, ancestry: Any, section: Any) -> None:
-        super().__init__(ancestry=ancestry, section=section)
+    assert await _page_number_from_ancestry(get_api_client(), _PATH_PART_ID) is None

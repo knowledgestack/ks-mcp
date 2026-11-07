@@ -29,5 +29,11 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # pyright is what catches `ksapi` API drift: the SDK is async-first, so a
+      # tool that forgets to `await` type-checks as a coroutine return. The unit
+      # tests pass in that state, which is how it slipped through once already.
+      - name: Type check
+        run: uv run pyright
+
       - name: Test
         run: uv run pytest tests/ -v
