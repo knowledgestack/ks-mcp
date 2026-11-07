@@ -349,7 +349,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "ksapi", specifier = ">=3.26.4,<4" },
+    { name = "ksapi", specifier = ">=3.28.0" },
     { name = "mcp", specifier = ">=1.2,<2" },
     { name = "pydantic", specifier = ">=2.6,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
@@ -362,7 +362,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ksapi"
-version = "3.26.4"
+version = "3.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -370,9 +370,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/59/30b43645c76cbeae4d8f73f48afe86e5f4530b74a70f51fc3107e3d251aa/ksapi-3.26.4.tar.gz", hash = "sha256:57f09145bed9a6f713667f56e7fa5fab6cbf1295ea0497bf8ddd5db6eed20317", size = 581311, upload-time = "2026-11-06T14:11:33.023Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/69/d4071fb17ee343a8e112d08319665f662f5b251e3e1e50991f10cf6e6710/ksapi-3.28.0.tar.gz", hash = "sha256:2300565d0fcd88d8ce05bb60fc1f0e872fa9b808571bf47ce9f43e6ab5bbb9a5", size = 580353, upload-time = "2026-11-07T15:02:36.983Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/36/9754adb993b894fff5aa66d967bd2cc30de603caf1d64f2c5e9722549f3b/ksapi-3.26.4-py3-none-any.whl", hash = "sha256:5471b34131ba1d1b5de3f6a089cf8096cb1ab1c7ccbe4d049d60db3107f6fb9d", size = 1519766, upload-time = "2026-11-06T14:11:31.26Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/e2/0b38830b57a408270b8cc30a642b9834999b5ae34c4991e18c906fe5e693/ksapi-3.28.0-py3-none-any.whl", hash = "sha256:564783c09b4ff16cc5b431ad0930056229da46859c8d9e0230de86d3278ada61", size = 1519769, upload-time = "2026-11-07T15:02:35.024Z" },
 ]
 
 [[package]]
