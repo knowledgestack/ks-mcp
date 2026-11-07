@@ -317,6 +317,24 @@ snippet and never calls `cite`. These move that discipline server-side.
 Rendering a prompt is pure text assembly — no API call, no tenant quota.
 Clients that don't support `prompts/` simply never list them.
 
+### Resources
+
+Folders and documents are also addressable as MCP `resources/`, so a client can
+enumerate the tree and reference a document natively instead of passing UUIDs
+through tool arguments:
+
+| URI | Kind | Returns |
+| --- | --- | --- |
+| `ks://folders` | resource | Tenant root folders, as JSON |
+| `ks://folder/{path_part_id}` | template | One folder's immediate children, as JSON |
+| `ks://document/{path_part_id}` | template | One document's full text, as Markdown with `[chunk:UUID]` tags |
+
+The two parameterized URIs are **templates**, not listed resources. Enumerating
+every folder and document would mean walking the whole tenant tree on each
+`resources/list` — unbounded work and a response no client wants on a real
+corpus. Listings instead carry each child's own `ks://` URI, so traversal is
+lazy: read `ks://folders`, then follow the children you care about.
+
 ### Published schemas
 
 Every tool's input and output JSON Schema is committed under
@@ -515,7 +533,7 @@ src/ks_mcp/
 
 See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/knowledgestack/ks-mcp/issues) for everything on deck. **We prioritize what users thumbs-up** — if a milestone matters to you, react on the issue.
 
-- **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, ~~prompt library~~ ✅ shipped.
+- **v0.2** — OAuth 2.1 device flow auth, streaming partial results, ~~resource templates for folders/documents~~ ✅ shipped, ~~prompt library~~ ✅ shipped.
 - **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
 - **v0.4** — hosted Streamable HTTP deployment guide (Fly.io, Cloud Run, Modal), per-tool rate limits.
 - **v0.5** — ~~hybrid search (dense + BM25 fusion)~~ ✅ shipped as `search_hybrid`; next up a `summarize_document` convenience tool and a `rerank_chunks` second pass.

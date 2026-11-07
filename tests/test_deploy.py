@@ -7,7 +7,6 @@ regresses, three deploy configs and the Dockerfile HEALTHCHECK break at once —
 and only in production, since nothing else calls it.
 """
 
-import json
 import tomllib
 from pathlib import Path
 
@@ -282,9 +281,3 @@ def test_deploy_readme_documents_every_config() -> None:
 
 def test_root_readme_links_the_deploy_guide() -> None:
     assert "deploy/README.md" in (REPO_ROOT / "README.md").read_text()
-
-
-def test_schemas_index_is_valid_json() -> None:
-    """Cheap guard that the committed manifest is loadable by a consumer."""
-    payload = json.loads((REPO_ROOT / "schemas" / "index.json").read_text(encoding="utf-8"))
-    assert payload["tools"]

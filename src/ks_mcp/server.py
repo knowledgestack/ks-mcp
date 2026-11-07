@@ -34,7 +34,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from ks_mcp import __version__, prompts
+from ks_mcp import __version__, prompts, resources
 from ks_mcp.client import (
     configure_logging,
     get_allowed_hosts,
@@ -67,7 +67,10 @@ INSTRUCTIONS = (
     "a download.\n"
     "If your client supports MCP prompts, `summarize-with-citations`, "
     "`compare-documents`, `expand-around-chunk` and `answer-from-folder` carry "
-    "the recommended tool sequence for those jobs."
+    "the recommended tool sequence for those jobs.\n"
+    "Folders and documents are also addressable as MCP resources: read "
+    "`ks://folders` for the tenant root, then follow each child's `ks://folder/…` "
+    "or `ks://document/…` URI."
 )
 
 _MODULES = (search, read, browse, cite, ask, extract, org, provenance, workflows)
@@ -139,6 +142,7 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     # Prompts are pure text — no API calls, no tenant quota — so they're always
     # registered; a client that ignores prompts/ simply never lists them.
     prompts.register(mcp)
+    resources.register(mcp)
     _normalize_tool_descriptions(mcp)
 
     # The MCP endpoint itself can't serve as a health check: `GET /mcp` returns
