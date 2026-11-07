@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "List the immediate children of a folder, like ``ls``.\n\nPass no argument to list root-level folders. Returns one entry per\nchild (folder or document) with its ``path_part_id``, ``name``,\n``part_type``, and ``materialized_path``. If a stale / unknown\n``folder_id`` is supplied, the tool falls back to listing the tenant\nroot rather than failing — agents discovering the corpus get a useful\nresult instead of a dead-end 404.\n",
+  "description": "List the immediate children of a folder, like ``ls``.\n\nPass no argument to list root-level folders. Returns one entry per\nchild (folder or document) with its ``path_part_id``, ``name``,\n``part_type``, and ``materialized_path``. If a stale / unknown\n``folder_id`` is supplied, the tool falls back to listing the tenant\nroot rather than failing — agents discovering the corpus get a useful\nresult instead of a dead-end 404.",
   "inputSchema": {
     "properties": {
       "folder_id": {

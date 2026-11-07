@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Fuzzy-search path-parts (folders, documents, sections) by name.\n\nUse when the user refers to a document by a remembered title fragment\n(\"the onboarding handbook\", \"Q3 forecast\"). For matching the *body* of\na document, use ``search_keyword`` instead — ``find`` only looks at\nnames.\n",
+  "description": "Fuzzy-search path-parts (folders, documents, sections) by name.\n\nUse when the user refers to a document by a remembered title fragment\n(\"the onboarding handbook\", \"Q3 forecast\"). For matching the *body* of\na document, use ``search_keyword`` instead — ``find`` only looks at\nnames.",
   "inputSchema": {
     "properties": {
       "limit": {

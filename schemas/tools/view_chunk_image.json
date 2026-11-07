@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Fetch the image bytes for an IMAGE-type chunk and return them to the agent.\n\nOnly works for chunks whose metadata carries at least one S3 URL\n(typically ``chunk_type == \"IMAGE\"``). Agent frameworks that support\nmulti-modal content (Claude, GPT-4o, Gemini) render the result inline;\ntext-only frameworks should expect this tool to error and call\n``read``/``cite`` for a textual surrogate instead.\n",
+  "description": "Fetch the image bytes for an IMAGE-type chunk and return them to the agent.\n\nOnly works for chunks whose metadata carries at least one S3 URL\n(typically ``chunk_type == \"IMAGE\"``). Agent frameworks that support\nmulti-modal content (Claude, GPT-4o, Gemini) render the result inline;\ntext-only frameworks should expect this tool to error and call\n``read``/``cite`` for a textual surrogate instead.",
   "inputSchema": {
     "properties": {
       "chunk_id": {

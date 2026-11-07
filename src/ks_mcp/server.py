@@ -26,6 +26,7 @@ Environment:
 
 import argparse
 import asyncio
+import inspect
 import sys
 
 from mcp.server.fastmcp import FastMCP
@@ -75,6 +76,31 @@ INSTRUCTIONS = (
 _MODULES = (search, read, browse, cite, ask, extract, org, provenance, workflows)
 
 
+def _normalize_tool_descriptions(mcp: FastMCP) -> None:
+    """Dedent tool descriptions so they are identical on every Python version.
+
+    Tool descriptions are taken from docstrings, and Python 3.13 strips common
+    leading indentation at compile time (gh-81283) while 3.11 and 3.12 do not.
+    Left alone that costs us twice:
+
+    * a server running on 3.11/3.12 sends every tool description with eight
+      spaces on each body line — wasted tokens in the tool list, and ragged
+      rendering in clients that display descriptions verbatim;
+    * `schemas/` could only ever match the interpreter that generated it,
+      which is what broke CI: the files were exported on 3.13 and the matrix
+      runs 3.11 and 3.12.
+
+    ``cleandoc`` converges both forms on the same string and is idempotent, so
+    this is safe to apply regardless of the running interpreter.
+
+    Prompt and resource descriptions are passed as explicit keyword arguments
+    rather than read from docstrings, so they need no normalization.
+    """
+    for tool in mcp._tool_manager.list_tools():
+        if tool.description:
+            tool.description = inspect.cleandoc(tool.description)
+
+
 def _transport_security() -> TransportSecuritySettings | None:
     """Build Host/Origin validation settings from the environment.
 
@@ -117,6 +143,7 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     # registered; a client that ignores prompts/ simply never lists them.
     prompts.register(mcp)
     resources.register(mcp)
+    _normalize_tool_descriptions(mcp)
 
     # The MCP endpoint itself can't serve as a health check: `GET /mcp` returns
     # 406 without an SSE Accept header and 400 without a session id, so every

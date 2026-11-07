@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Return the ``radius`` chunks before and after an anchor chunk.\n\nGreat for pulling enough local context when a single chunk isn't\nenough — e.g. the answer hinges on a sentence that references \"the\ntable above\". Set ``within_section=False`` when the context you need\nprobably spills into the neighbouring section.\n\nOutput is ordered preceding → anchor → succeeding. Each neighbour is\nlabelled (``[ANCHOR]`` or ``[ctx N]``) and tagged with its\n``[chunk:UUID]`` so the agent can cite the right neighbour, not just\nthe anchor.\n",
+  "description": "Return the ``radius`` chunks before and after an anchor chunk.\n\nGreat for pulling enough local context when a single chunk isn't\nenough — e.g. the answer hinges on a sentence that references \"the\ntable above\". Set ``within_section=False`` when the context you need\nprobably spills into the neighbouring section.\n\nOutput is ordered preceding → anchor → succeeding. Each neighbour is\nlabelled (``[ANCHOR]`` or ``[ctx N]``) and tagged with its\n``[chunk:UUID]`` so the agent can cite the right neighbour, not just\nthe anchor.",
   "inputSchema": {
     "properties": {
       "chunk_id": {

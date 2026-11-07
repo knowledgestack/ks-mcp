@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Read the contents of any PDO and return Markdown text.\n\nDispatch:\n\n* **CHUNK** → raw chunk text + a ``[chunk:UUID]`` citation tag.\n* **SECTION** → section name + page number; use ``read`` on the parent\n  DOCUMENT for full text.\n* **DOCUMENT** → flattened, ordered chunks with section headings,\n  paginated up to ``max_chars``.\n* **FOLDER / unknown** → name + a hint to use ``list_contents`` to drill in.\n\nIf ``path_part_id`` 404s as a path-part, ``read`` retries the lookup as\na chunk, so callers can pass either a ``path_part_id`` or a ``chunk_id``\nfrom a search result without a second round-trip. Pair with ``cite``\nwhen you also need a citation footer.\n",
+  "description": "Read the contents of any PDO and return Markdown text.\n\nDispatch:\n\n* **CHUNK** → raw chunk text + a ``[chunk:UUID]`` citation tag.\n* **SECTION** → section name + page number; use ``read`` on the parent\n  DOCUMENT for full text.\n* **DOCUMENT** → flattened, ordered chunks with section headings,\n  paginated up to ``max_chars``.\n* **FOLDER / unknown** → name + a hint to use ``list_contents`` to drill in.\n\nIf ``path_part_id`` 404s as a path-part, ``read`` retries the lookup as\na chunk, so callers can pass either a ``path_part_id`` or a ``chunk_id``\nfrom a search result without a second round-trip. Pair with ``cite``\nwhen you also need a citation footer.",
   "inputSchema": {
     "properties": {
       "max_chars": {

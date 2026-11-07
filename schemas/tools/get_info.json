@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Return a path-part's own info plus its root-to-leaf ancestry breadcrumb.\n\nUse when you need to resolve a node's type or build a human-readable\npath before calling ``read`` or ``cite``. The returned ``ancestry``\nlist is ordered root → … → parent (excluding the node itself), so the\nlast element is the immediate parent.\n",
+  "description": "Return a path-part's own info plus its root-to-leaf ancestry breadcrumb.\n\nUse when you need to resolve a node's type or build a human-readable\npath before calling ``read`` or ``cite``. The returned ``ancestry``\nlist is ordered root → … → parent (excluding the node itself), so the\nlast element is the immediate parent.",
   "inputSchema": {
     "properties": {
       "path_part_id": {

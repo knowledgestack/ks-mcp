@@ -86,10 +86,54 @@ async def test_index_reports_the_ks_mcp_version_not_the_mcp_library_version() ->
 
 
 async def test_export_is_deterministic() -> None:
-    """Two runs must be byte-identical, or every regeneration is a noisy diff."""
+    """Two runs must be byte-identical, or every regeneration is a noisy diff.
+
+    Note what this does *not* cover: both runs share one interpreter, so it
+    cannot catch output that varies *between* Python versions. That gap let a
+    3.13-generated `schemas/` through while CI ran 3.11/3.12 — see
+    `test_tool_descriptions_are_dedented` for the guard that closes it.
+    """
     first = _sorted_json(await build_schemas())
     second = _sorted_json(await build_schemas())
     assert first == second
+
+
+async def test_tool_descriptions_are_dedented() -> None:
+    """Descriptions must not carry docstring indentation on any interpreter.
+
+    Python 3.13 strips common leading indentation from docstrings at compile
+    time (gh-81283); 3.11 and 3.12 do not. Since tool descriptions come from
+    docstrings, that made the exported schemas interpreter-dependent — the
+    committed files matched 3.13 and CI failed on 3.12.
+
+    `build_server` now runs every description through `inspect.cleandoc`. This
+    asserts the result, so it fails on whichever version regresses rather than
+    only on the one that generated the artifact.
+    """
+    from ks_mcp.server import build_server
+
+    offenders: list[str] = []
+    for tool in await build_server().list_tools():
+        for lineno, line in enumerate((tool.description or "").splitlines(), 1):
+            # A dedented docstring can still indent deliberately (code blocks,
+            # nested bullets). What must never appear is the uniform 4+ space
+            # body indent that an undedented docstring applies to every line.
+            if line.startswith("    ") and line.strip() and not line.lstrip().startswith(("*", "-", "#")):
+                offenders.append(f"{tool.name}:{lineno}: {line[:60]!r}")
+
+    assert not offenders, (
+        "tool descriptions carry docstring indentation — _normalize_tool_descriptions "
+        f"is not running or no longer works on this interpreter: {offenders[:5]}"
+    )
+
+
+async def test_descriptions_have_no_trailing_whitespace() -> None:
+    """`cleandoc` also strips the trailing newline; pin it so diffs stay quiet."""
+    from ks_mcp.server import build_server
+
+    for tool in await build_server().list_tools():
+        description = tool.description or ""
+        assert description == description.strip(), f"{tool.name} has edge whitespace"
 
 
 async def test_library_owned_keys_are_excluded() -> None:
