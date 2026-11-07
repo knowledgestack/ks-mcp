@@ -11,7 +11,8 @@
 Read-only tool surface over the Knowledge Stack API. Shipped.
 
 - 🟢 `ask` — one-shot grounded Q&A via the KS agent (SSE assembled into a single result)
-- 🟢 `search_knowledge`, `search_keyword`
+- 🟢 `extract` — schema-conforming JSON output via the KS agent
+- 🟢 `search_knowledge`, `search_keyword`, `search_hybrid`
 - 🟢 `read`, `read_around`
 - 🟢 `cite` — structured citations with page-aware footnotes
 - 🟢 `list_contents`, `find`, `get_info`
@@ -19,6 +20,7 @@ Read-only tool surface over the Knowledge Stack API. Shipped.
 - 🟢 `get_organization_info`, `get_current_datetime`
 - 🟢 `trace_chunk_lineage`, `compare_versions` (provenance)
 - 🟢 stdio + Streamable HTTP transports
+- 🟢 `--check` setup doctor (validates key + host, lists tools, non-zero exit on failure)
 
 ## v0.2 — Registry & auth 🟡 (target: Q2 2026)
 
@@ -47,7 +49,8 @@ Writes are **opt-in** behind `--allow-write` and a separate admin key.
 
 ## v0.5 — Retrieval quality ⚪ (target: Q4 2026)
 
-- ⚪ `search_hybrid` — dense + BM25 fusion with RRF
+- 🟢 `search_hybrid` — dense + BM25 fusion (shipped early; the backend exposes
+  `SearchType.hybrid` with `hybrid` / `dense` / `sparse` weighting profiles)
 - ⚪ `summarize_document` — server-side summarization with citations
 - ⚪ Re-ranker tool (`rerank_chunks`)
 - ⚪ Language-aware chunking hints surfaced in results

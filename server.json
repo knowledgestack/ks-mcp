@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.knowledgestack/ks-mcp",
-  "description": "Knowledge Stack MCP server — semantic + keyword search, document reading, image retrieval, and path browsing over a tenant-scoped knowledge base.",
+  "description": "Knowledge Stack MCP server — semantic, keyword, and hybrid search, document reading, citations, schema-shaped extraction, image retrieval, and path browsing over a tenant-scoped knowledge base.",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/knowledgestack/ks-mcp",
@@ -12,7 +12,9 @@
       "registryType": "pypi",
       "identifier": "knowledgestack-mcp",
       "version": "0.1.0",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "runtimeHint": "uvx",
       "environmentVariables": [
         {
@@ -24,6 +26,16 @@
         {
           "name": "KS_BASE_URL",
           "description": "Override the KS API host. Defaults to https://api.knowledgestack.ai.",
+          "isRequired": false
+        },
+        {
+          "name": "KS_TIMEOUT_S",
+          "description": "HTTP timeout in seconds for upstream KS calls. Defaults to 30.",
+          "isRequired": false
+        },
+        {
+          "name": "KS_LOG_LEVEL",
+          "description": "Log verbosity (DEBUG/INFO/WARNING/ERROR). Logs go to stderr. Defaults to INFO.",
           "isRequired": false
         }
       ]

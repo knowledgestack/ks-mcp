@@ -1,45 +1,52 @@
 """Ask the Knowledge Stack agent a question and return the final answer."""
 
+import asyncio
 import json
-import os
 from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
 import ksapi
+from ksapi.api.thread_messages_api import ThreadMessagesApi
 from ksapi.api.threads_api import ThreadsApi
+from ksapi.models.supported_language import SupportedLanguage
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from ks_mcp.client import get_api_client
+from ks_mcp.client import (
+    DEFAULT_AGENT_TIMEOUT_S,
+    get_api_client,
+    get_api_key,
+    get_base_url,
+)
 from ks_mcp.errors import rest_to_mcp
 from ks_mcp.schema import AskCitation, AskResult
 
-_DEFAULT_TIMEOUT_S = 120.0
-_SSE_READ_TIMEOUT_S = 180.0
+_CONNECT_TIMEOUT_S = 30.0
 
 
-def _ensure_thread(client: ksapi.ApiClient, thread_id: UUID | None, question: str) -> UUID:
+async def _ensure_thread(client: ksapi.ApiClient, thread_id: UUID | None, question: str) -> UUID:
     """Return an existing thread id, or create a new thread auto-titled by ``question``."""
     if thread_id is not None:
         return thread_id
     create_req = ksapi.CreateThreadRequest(message_for_title=question[:4000])
     try:
-        thread: Any = ThreadsApi(client).create_thread(create_thread_request=create_req)
+        thread = await ThreadsApi(client).create_thread(create_thread_request=create_req)
     except ksapi.ApiException as exc:
         raise rest_to_mcp(exc) from exc
     return thread.id
 
 
-def _send_user_message(
+async def _send_user_message(
     client: ksapi.ApiClient,
     thread_id: UUID,
     question: str,
+    output_language: SupportedLanguage | None,
 ) -> str:
     """POST /threads/{id}/user_message → returns workflow_id (202)."""
-    req = ksapi.UserMessageRequest(input_text=question)
+    req = ksapi.UserMessageRequest(input_text=question, output_language=output_language)
     try:
-        resp: Any = ThreadsApi(client).send_user_message(
+        resp = await ThreadsApi(client).send_user_message(
             thread_id=thread_id,
             user_message_request=req,
         )
@@ -66,123 +73,174 @@ def _parse_sse_block(block: str) -> tuple[str | None, str]:
     return event, "\n".join(data_lines)
 
 
-def _stream_answer(
-    base_url: str,
-    api_key: str,
-    thread_id: UUID,
-    timeout_s: float,
-) -> AskResult:
-    """Open the SSE stream, accumulate text deltas, return the assembled answer."""
-    parts: list[str] = []
-    citations: list[AskCitation] = []
-    message_id: UUID | None = None
-    is_error = False
-    error_text = ""
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream",
+# Events the stream emits that `ask` has no use for: tool/reasoning activity and
+# text-block framing. Listed explicitly so an unexpected event name is obvious.
+_IGNORED_EVENTS = frozenset(
+    {
+        "text_start",
+        "text_end",
+        "tool_call",
+        "tool_result",
+        "reasoning_start",
+        "reasoning_delta",
+        "reasoning_end",
+        "user_message_appended",
+        "replay_complete",
     }
-    url = f"{base_url.rstrip('/')}/v1/threads/{thread_id}/stream"
+)
 
-    with httpx.Client(timeout=httpx.Timeout(timeout_s, read=_SSE_READ_TIMEOUT_S)) as http:
-        with http.stream("GET", url, headers=headers) as resp:
+
+class _Accumulator:
+    """Mutable stream state, so a timeout can still return what was assembled.
+
+    The thread stream carries text deltas and lifecycle events only — citations
+    are attached to the *persisted* message after post-processing, so they are
+    fetched separately once ``message_end`` lands (see ``_fetch_enriched``).
+    """
+
+    def __init__(self, thread_id: UUID) -> None:
+        self.thread_id = thread_id
+        self.parts: list[str] = []
+        self.citations: list[AskCitation] = []
+        self.message_id: UUID | None = None
+        self.is_error = False
+        self.error_text = ""
+        self.done = False
+
+    def feed(self, event: str | None, data: str) -> None:
+        # The terminal event is yielded as a bare `data: [DONE]` with no
+        # `event:` line, so it must be matched before the event-name switch.
+        if data == "[DONE]":
+            self.done = True
+            return
+        if not event or event in _IGNORED_EVENTS:
+            return
+        try:
+            payload: dict[str, Any] = json.loads(data) if data else {}
+        except json.JSONDecodeError:
+            return
+        # Every message-scoped event carries `id`, and we subscribe *after* the
+        # 202 — so `message_start` may already have been published before our
+        # stream attaches. Take the id from whichever event arrives first, or
+        # citation enrichment silently never runs.
+        if self.message_id is None and payload.get("id"):
+            try:
+                self.message_id = UUID(str(payload["id"]))
+            except ValueError:
+                pass
+        if event == "text_delta":
+            delta = payload.get("delta")
+            if isinstance(delta, str):
+                self.parts.append(delta)
+        elif event == "error":
+            self.is_error = True
+            # The error event carries {code, message}; older publishers used {error}.
+            detail = str(payload.get("message") or payload.get("error") or "")
+            code = str(payload.get("code") or "")
+            self.error_text = f"{code}: {detail}".strip(": ") or "agent error"
+        elif event in ("message_end", "done"):
+            self.done = True
+
+    def result(self, *, timed_out: bool = False) -> AskResult:
+        answer = "".join(self.parts).strip()
+        if self.is_error and not answer:
+            answer = f"(agent error) {self.error_text}"
+        elif timed_out:
+            suffix = "\n\n(timed out waiting for the agent; answer may be incomplete)"
+            answer = f"{answer}{suffix}" if answer else suffix.strip()
+        return AskResult(
+            answer=answer or "(empty answer)",
+            citations=self.citations,
+            thread_id=self.thread_id,
+            message_id=self.message_id,
+            is_error=self.is_error or timed_out,
+        )
+
+
+def _to_ask_citation(raw: ksapi.EnrichedCitation) -> AskCitation | None:
+    """Project an ``EnrichedCitation`` onto the MCP-facing citation model."""
+    if raw.chunk_id is None:
+        return None
+    return AskCitation(
+        chunk_id=raw.chunk_id,
+        quote=raw.quote or "",
+        document_id=raw.document_id,
+        document_name=raw.document_name,
+        materialized_path=raw.materialized_path,
+        path_part_id=raw.path_part_id,
+        version_number=raw.version_number,
+    )
+
+
+async def _fetch_enriched(
+    client: ksapi.ApiClient, thread_id: UUID, message_id: UUID
+) -> tuple[str | None, list[AskCitation], bool]:
+    """Read the persisted assistant message for citations and normalized text.
+
+    ``message_end`` is published *after* persistence, so by the time the stream
+    closes the message carries its resolved citations. Best-effort: on any API
+    error we fall back to the text assembled from the stream.
+    """
+    try:
+        message = await ThreadMessagesApi(client).get_thread_message(
+            thread_id=thread_id,
+            message_id=message_id,
+            with_details=False,
+        )
+    except ksapi.ApiException:
+        return None, [], False
+    content = message.content
+    citations = [c for c in (_to_ask_citation(r) for r in content.citations or []) if c]
+    return content.text or None, citations, bool(content.is_error)
+
+
+async def _consume_stream(
+    base_url: str, api_key: str, acc: _Accumulator, timeout_s: float
+) -> None:
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "text/event-stream"}
+    url = f"{base_url.rstrip('/')}/v1/threads/{acc.thread_id}/stream"
+    timeout = httpx.Timeout(timeout_s, connect=_CONNECT_TIMEOUT_S, read=timeout_s)
+    async with httpx.AsyncClient(timeout=timeout) as http:
+        async with http.stream("GET", url, headers=headers) as resp:
             if resp.status_code != 200:
-                resp.read()
+                await resp.aread()
                 raise RuntimeError(
-                    f"Stream returned HTTP {resp.status_code}: "
-                    f"{resp.text[:300] if resp.text else ''}"
+                    f"Stream returned HTTP {resp.status_code}: {resp.text[:300] if resp.text else ''}"
                 )
             buffer = ""
-            for chunk in resp.iter_text():
+            async for chunk in resp.aiter_text():
                 if not chunk:
                     continue
                 buffer += chunk
                 while "\n\n" in buffer:
                     block, buffer = buffer.split("\n\n", 1)
-                    event, data = _parse_sse_block(block)
-                    if event is None and data == "[DONE]":
-                        return _build_result(
-                            parts,
-                            citations,
-                            thread_id,
-                            message_id,
-                            is_error,
-                            error_text,
-                        )
-                    if not event:
-                        continue
-                    payload: dict[str, Any]
-                    try:
-                        payload = json.loads(data) if data else {}
-                    except json.JSONDecodeError:
-                        continue
-                    if event == "message_start":
-                        raw_id = payload.get("id")
-                        if raw_id:
-                            try:
-                                message_id = UUID(str(raw_id))
-                            except ValueError:
-                                pass
-                    elif event == "text_delta":
-                        delta = payload.get("delta")
-                        if isinstance(delta, str):
-                            parts.append(delta)
-                    elif event == "citations":
-                        for raw in payload.get("citations") or []:
-                            try:
-                                citations.append(_to_ask_citation(raw))
-                            except (KeyError, ValueError, TypeError):
-                                continue
-                    elif event == "error":
-                        is_error = True
-                        error_text = str(payload.get("error", "")) or "agent error"
-                    elif event == "message_end":
-                        return _build_result(
-                            parts,
-                            citations,
-                            thread_id,
-                            message_id,
-                            is_error,
-                            error_text,
-                        )
-    return _build_result(parts, citations, thread_id, message_id, is_error, error_text)
+                    acc.feed(*_parse_sse_block(block))
+                    if acc.done:
+                        return
 
 
-def _to_ask_citation(raw: dict[str, Any]) -> AskCitation:
-    return AskCitation(
-        chunk_id=UUID(str(raw["chunk_id"])),
-        quote=str(raw.get("quote", "")),
-        document_id=UUID(str(raw["document_id"])) if raw.get("document_id") else None,
-        document_name=raw.get("document_name"),
-        materialized_path=raw.get("materialized_path"),
-        page_number=raw.get("page_number"),
-    )
+async def _stream_answer(
+    base_url: str, api_key: str, thread_id: UUID, timeout_s: float
+) -> tuple[_Accumulator, bool]:
+    """Open the SSE stream and accumulate text deltas. Returns (state, timed_out).
 
-
-def _build_result(
-    parts: list[str],
-    citations: list[AskCitation],
-    thread_id: UUID,
-    message_id: UUID | None,
-    is_error: bool,
-    error_text: str,
-) -> AskResult:
-    answer = "".join(parts).strip()
-    if is_error and not answer:
-        answer = f"(agent error) {error_text}"
-    return AskResult(
-        answer=answer or "(empty answer)",
-        citations=citations,
-        thread_id=thread_id,
-        message_id=message_id,
-        is_error=is_error,
-    )
+    ``timeout_s`` is a hard ceiling: on expiry we return whatever arrived rather
+    than raising, so a slow tool-heavy run still yields partial text. The caller
+    gets the raw accumulator because a timeout is only really an error if the
+    final message can't be fetched afterwards.
+    """
+    acc = _Accumulator(thread_id)
+    try:
+        async with asyncio.timeout(timeout_s):
+            await _consume_stream(base_url, api_key, acc, timeout_s)
+    except (TimeoutError, httpx.TimeoutException):
+        return acc, True
+    return acc, False
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def ask(
+    async def ask(
         question: Annotated[
             str,
             Field(
@@ -200,6 +258,15 @@ def register(mcp: FastMCP) -> None:
                 ),
             ),
         ] = None,
+        output_language: Annotated[
+            SupportedLanguage | None,
+            Field(
+                description=(
+                    "Language the answer is written in (`en` or `zh`). "
+                    "Omit to use the tenant's configured default."
+                )
+            ),
+        ] = None,
         timeout_s: Annotated[
             float,
             Field(
@@ -207,29 +274,49 @@ def register(mcp: FastMCP) -> None:
                 ge=10.0,
                 le=600.0,
             ),
-        ] = _DEFAULT_TIMEOUT_S,
+        ] = DEFAULT_AGENT_TIMEOUT_S,
     ) -> AskResult:
         """Ask the Knowledge Stack agent a question and return the final answer.
 
         Wraps the backend's two-step ask flow (POST user message → SSE stream)
-        into a single synchronous tool call: assembles the streamed text,
-        captures any inline citations, and returns once the agent emits
-        ``message_end``. Use this when you want one grounded answer rather
-        than running your own retrieval loop.
+        into a single tool call: assembles the streamed text, captures any
+        inline citations, and returns once the agent emits ``message_end``.
+        Use this when you want one grounded answer rather than running your own
+        retrieval loop.
+
+        Citations are read from the persisted message once the stream closes,
+        so ``citations`` is populated even though the SSE protocol itself
+        carries only text.
 
         Returns ``AskResult(answer, citations[], thread_id, message_id, ...)``.
         Pass the same ``thread_id`` back on a follow-up call to continue the
         conversation. For raw retrieval (without an LLM), use
-        ``search_knowledge`` / ``search_keyword`` + ``cite`` instead.
+        ``search_knowledge`` / ``search_hybrid`` + ``cite`` instead; for
+        schema-shaped output use ``extract``.
         """
         client = get_api_client()
-        thread = _ensure_thread(client, thread_id, question)
-        workflow_id = _send_user_message(client, thread, question)
+        thread = await _ensure_thread(client, thread_id, question)
+        workflow_id = await _send_user_message(client, thread, question, output_language)
 
-        api_key = os.environ.get("KS_API_KEY", "")
-        base_url = os.environ.get("KS_BASE_URL", "https://api.knowledgestack.ai")
+        acc, timed_out = await _stream_answer(get_base_url(), get_api_key(), thread, timeout_s)
 
-        result = _stream_answer(base_url, api_key, thread, timeout_s)
-        if workflow_id and not result.workflow_id:
-            result = result.model_copy(update={"workflow_id": workflow_id})
-        return result
+        text: str | None = None
+        citations: list[AskCitation] = []
+        content_error = False
+        if acc.message_id is not None:
+            text, citations, content_error = await _fetch_enriched(client, thread, acc.message_id)
+
+        # A timeout only degrades the answer if we couldn't recover the final
+        # message afterwards — the agent often finishes just after we stop reading.
+        result = acc.result(timed_out=timed_out and not text)
+        updates: dict[str, Any] = {}
+        if workflow_id:
+            updates["workflow_id"] = workflow_id
+        # The persisted text is citation-resolved; prefer it over raw deltas.
+        if text:
+            updates["answer"] = text
+        if citations:
+            updates["citations"] = citations
+        if content_error:
+            updates["is_error"] = True
+        return result.model_copy(update=updates) if updates else result

@@ -29,24 +29,24 @@ def _snippet(text: str, limit: int = _SNIPPET_CHARS) -> str:
 
 
 def _normalize_part_type(value: Any) -> str:
-    text = str(value or "")
-    if text.startswith("PartType."):
-        text = text.removeprefix("PartType.")
-    return text
+    text = str(getattr(value, "value", None) or value or "")
+    return text.removeprefix("PartType.").upper()
 
 
-def _page_number_from_ancestry(client: ksapi.ApiClient, path_part_id: UUID | None) -> int | None:
+async def _page_number_from_ancestry(
+    client: ksapi.ApiClient, path_part_id: UUID | None
+) -> int | None:
     """Walk root→leaf ancestry and return the nearest SECTION's page_number, if any."""
     if path_part_id is None:
         return None
     try:
-        ancestry: Any = PathPartsApi(client).get_path_part_ancestry(path_part_id=path_part_id)
+        ancestry = await PathPartsApi(client).get_path_part_ancestry(path_part_id=path_part_id)
     except ksapi.ApiException:
         return None
-    items = getattr(ancestry, "ancestors", None) or getattr(ancestry, "items", None) or []
     section_metadata_id: UUID | None = None
-    # Pick the deepest (closest-to-leaf) SECTION ancestor.
-    for item in items:
+    # Ancestors are ordered root → parent, so the last SECTION seen is the
+    # deepest (closest-to-leaf) one.
+    for item in ancestry.ancestors or []:
         inner = getattr(item, "actual_instance", None) or item
         if _normalize_part_type(getattr(inner, "part_type", "")) == "SECTION":
             candidate = getattr(inner, "metadata_obj_id", None)
@@ -55,16 +55,16 @@ def _page_number_from_ancestry(client: ksapi.ApiClient, path_part_id: UUID | Non
     if section_metadata_id is None:
         return None
     try:
-        section: Any = SectionsApi(client).get_section(section_id=section_metadata_id)
+        section = await SectionsApi(client).get_section(section_id=section_metadata_id)
     except ksapi.ApiException:
         return None
-    page = getattr(section, "page_number", None)
+    page = section.page_number
     return int(page) if isinstance(page, int) else None
 
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    def cite(
+    async def cite(
         chunk_id: Annotated[
             UUID,
             Field(
@@ -90,28 +90,18 @@ def register(mcp: FastMCP) -> None:
         try:
             # `with_document=True` is required for `chunk.document.name` to be
             # populated — otherwise every citation comes back document-less.
-            chunk: Any = ChunksApi(client).get_chunk(
-                chunk_id=chunk_id,
-                with_document=True,
-            )
+            chunk = await ChunksApi(client).get_chunk(chunk_id=chunk_id, with_document=True)
         except ksapi.ApiException as exc:
             raise rest_to_mcp(exc) from exc
 
-        document = getattr(chunk, "document", None)
-        document_name = (
-            getattr(document, "name", None)
-            or getattr(chunk, "document_name", None)
-            or "Untitled document"
-        )
-        materialized_path = getattr(chunk, "materialized_path", None)
-        body = getattr(chunk, "content", None) or getattr(chunk, "text", "") or ""
-        page = _page_number_from_ancestry(client, getattr(chunk, "path_part_id", None))
+        document_name = getattr(chunk.document, "name", None) or "Untitled document"
+        page = await _page_number_from_ancestry(client, chunk.path_part_id)
 
         return Citation(
             chunk_id=chunk_id,
             document_name=str(document_name),
-            materialized_path=materialized_path,
+            materialized_path=chunk.materialized_path,
             page_number=page,
-            snippet=_snippet(body),
+            snippet=_snippet(chunk.content or ""),
             tag=f"[chunk:{chunk_id}]",
         )

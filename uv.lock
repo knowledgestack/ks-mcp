@@ -348,10 +348,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "ksapi", specifier = ">=3.26.6" },
-    { name = "mcp", specifier = ">=1.2" },
-    { name = "pydantic", specifier = ">=2.6" },
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "ksapi", specifier = ">=3.26.4,<4" },
+    { name = "mcp", specifier = ">=1.2,<2" },
+    { name = "pydantic", specifier = ">=2.6,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
@@ -362,7 +362,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ksapi"
-version = "3.26.6"
+version = "3.26.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -370,9 +370,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/76/b0ec567d04321ec98d95816d7bb84584f2e1b7d63c548bc19ca1c16295ec/ksapi-3.26.6.tar.gz", hash = "sha256:e88356ab73d62b18865ab6e12c26b8244472847e6411a76910d744f08ad501dd", size = 581113, upload-time = "2026-11-07T10:13:28.133Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/59/30b43645c76cbeae4d8f73f48afe86e5f4530b74a70f51fc3107e3d251aa/ksapi-3.26.4.tar.gz", hash = "sha256:57f09145bed9a6f713667f56e7fa5fab6cbf1295ea0497bf8ddd5db6eed20317", size = 581311, upload-time = "2026-11-06T14:11:33.023Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/c3/b259b9eed65aa178f27a88e86645891b21c5964ba0e8646af51d363d4bca/ksapi-3.26.6-py3-none-any.whl", hash = "sha256:79841e80117399f5f45ed9545b3deac582a379945f9d47a6b2ea9edf4a4a2137", size = 1519767, upload-time = "2026-11-07T10:13:26.452Z" },
+    { url = "https://files.pythonhosted.org/packages/56/36/9754adb993b894fff5aa66d967bd2cc30de603caf1d64f2c5e9722549f3b/ksapi-3.26.4-py3-none-any.whl", hash = "sha256:5471b34131ba1d1b5de3f6a089cf8096cb1ab1c7ccbe4d049d60db3107f6fb9d", size = 1519766, upload-time = "2026-11-06T14:11:31.26Z" },
 ]
 
 [[package]]
