@@ -18,6 +18,8 @@ Read-only tool surface over the Knowledge Stack API. Shipped.
 - 🟢 `list_contents`, `find`, `get_info`
 - 🟢 `view_chunk_image`
 - 🟢 `get_organization_info`, `get_current_datetime`
+- 🟢 `get_workflow_status` — poll a background workflow (read-only; triggering
+  them is write-scoped and still planned)
 - 🟢 `trace_chunk_lineage`, `compare_versions` (provenance; `compare_versions`
   diffs server-side via `GET /v1/document_versions/{id}/diff`)
 - 🟢 stdio + Streamable HTTP transports

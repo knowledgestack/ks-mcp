@@ -26,7 +26,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ks_mcp import __version__
 from ks_mcp.client import configure_logging, get_base_url, get_log_level
-from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search
+from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search, workflows
 
 INSTRUCTIONS = (
     "Knowledge Stack: ground every answer in the tenant's knowledge base.\n"
@@ -41,14 +41,16 @@ INSTRUCTIONS = (
     "tag to the supporting sentence in your answer.\n"
     "Use `list_contents` / `find` / `get_info` to navigate the folder tree, and "
     "`view_chunk_image` for IMAGE-type chunks. `trace_chunk_lineage` and "
-    "`compare_versions` answer provenance questions. The only state-changing "
+    "`compare_versions` answer provenance questions. `get_workflow_status` "
+    "tells you whether a background job (an `ask` that timed out, an ingest) is "
+    "still running — read it once, don't poll in a loop. The only state-changing "
     "tools are `ask` (creates a thread + assistant message) and `extract`; both "
     "consume one message of tenant quota. Everything else only reads — though "
     "`compare_versions` is a privileged read and is audit-logged upstream, like "
     "a download."
 )
 
-_MODULES = (search, read, browse, cite, ask, extract, org, provenance)
+_MODULES = (search, read, browse, cite, ask, extract, org, provenance, workflows)
 
 
 def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
