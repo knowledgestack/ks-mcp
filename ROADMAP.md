@@ -46,7 +46,8 @@ Writes are **opt-in** behind `--allow-write` and a separate admin key.
 
 ## v0.4 — Hosted deployments ⚪ (target: Q3 2026)
 
-- ⚪ Reference Dockerfile + Fly.io / Cloud Run / Modal configs
+- 🟢 Reference Dockerfile + Fly.io / Cloud Run / Modal configs (`deploy/`), plus
+  a `GET /healthz` liveness route
 - ⚪ Per-tool rate limits and concurrency caps
 - ⚪ OpenTelemetry traces on every tool call
 - ⚪ Multi-tenant gateway mode (one server, many API keys)

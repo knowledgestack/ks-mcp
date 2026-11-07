@@ -1,0 +1,28 @@
+# Keep the build context small and secrets out of it.
+.git/
+.github/
+.venv/
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Never let a local key reach a build layer.
+.env
+.env.local
+
+.context/
+tests/
+deploy/
+schemas/
+Dockerfile
+.dockerignore
+*.md
+!README.md
+.DS_Store
+.idea/
+.vscode/
