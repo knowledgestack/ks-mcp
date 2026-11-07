@@ -1,0 +1,85 @@
+# Google Cloud Run — sample service for hosting ks-mcp over Streamable HTTP.
+#
+#   # 1. Store the key in Secret Manager (never in this file or the image):
+#   printf 'sk-user-...' | gcloud secrets create ks-api-key --data-file=-
+#   gcloud secrets add-iam-policy-binding ks-api-key \
+#       --member=serviceAccount:$(gcloud projects describe PROJECT_ID \
+#           --format='value(projectNumber)')-compute@developer.gserviceaccount.com \
+#       --role=roles/secretmanager.secretAccessor
+#
+#   # 2. Build and deploy:
+#   gcloud builds submit --tag gcr.io/PROJECT_ID/ks-mcp
+#   gcloud run services replace deploy/cloudrun-service.yaml --region us-central1
+#
+# Endpoint: https://<service-url>/mcp     Health: https://<service-url>/healthz
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ks-mcp
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # MCP sessions are stateful — per-session state lives in the process.
+        # Session affinity keeps a client on the instance that holds its
+        # session; without it a second request can hit a cold instance and get
+        # "Missing session ID".
+        run.googleapis.com/sessionAffinity: "true"
+        # Scale-to-zero drops live MCP sessions. One warm instance avoids both
+        # that and cold-start latency on the first tool call.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "4"
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      # Long-running SSE streams: `ask` can stream for minutes, so the request
+      # timeout must exceed the tool's own `timeout_s` ceiling (600s max).
+      timeoutSeconds: 900
+      containers:
+        - image: gcr.io/PROJECT_ID/ks-mcp
+          # Cloud Run injects $PORT and expects the app to bind it. The image's
+          # default CMD hardcodes 8765, so pass the port through explicitly.
+          args:
+            - "--http"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: KS_LOG_LEVEL
+              value: "INFO"
+            # Required when hosting: FastMCP only auto-enables DNS-rebinding
+            # protection for localhost binds, so a 0.0.0.0 bind accepts any
+            # Host/Origin unless this is set. Replace with your service URL
+            # host (`gcloud run services describe ks-mcp --format='value(status.url)'`).
+            - name: KS_ALLOWED_HOSTS
+              value: "ks-mcp-xxxxxxxxxx-uc.a.run.app"
+            - name: KS_ALLOWED_ORIGINS
+              value: "https://ks-mcp-xxxxxxxxxx-uc.a.run.app"
+            - name: KS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ks-api-key
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 3
