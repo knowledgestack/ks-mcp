@@ -831,29 +831,51 @@ async def test_get_info_rejects_unknown_path_part(server: FastMCP, ks: FakeKS) -
 
 
 # ---------------------------------------------------------------------------
-# compare_versions
+# compare_versions (server-side diff — see issue #25)
 # ---------------------------------------------------------------------------
 
 VERSION_A = "00000000-0000-0000-0000-0000000000f1"
 VERSION_B = "00000000-0000-0000-0000-0000000000f2"
 
 
-def _version_contents(ks: FakeKS, version_id: str, texts: list[str]) -> None:
-    ks.on(
-        "GET",
-        rf"/v1/document_versions/{version_id}/contents",
-        json_body={
-            "items": [_content_item("CHUNK", "", content=t) for t in texts],
-            "total": len(texts),
-            "limit": 100,
-            "offset": 0,
+def _wire_diff(ks: FakeKS, payload: dict[str, Any]) -> None:
+    """Stub `GET /v1/document_versions/{id}/diff` with a VersionDiffResponse."""
+    ks.on("GET", rf"/v1/document_versions/{VERSION_B}/diff", json_body=payload)
+
+
+def _text_diff_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "from_version_id": VERSION_A,
+        "to_version_id": VERSION_B,
+        "from_version": 3,
+        "to_version": 4,
+        "format": "text",
+        "text": {
+            "rows": [
+                {"type": "equal", "left_no": 1, "left": "intro", "right_no": 1, "right": "intro"},
+                {
+                    "type": "replace",
+                    "left_no": 2,
+                    "left": "old clause",
+                    "right_no": 2,
+                    "right": "new clause",
+                },
+                {"type": "insert", "right_no": 3, "right": "extra line"},
+                {"type": "delete", "left_no": 3, "left": "dropped line"},
+            ],
+            "added": 1,
+            "removed": 1,
+            "changed": 1,
+            "truncated": False,
         },
-    )
+    }
+    payload.update(overrides)
+    return payload
 
 
-async def test_compare_versions_reports_added_and_removed(server: FastMCP, ks: FakeKS) -> None:
-    _version_contents(ks, VERSION_A, ["intro unchanged", "old clause", "tail unchanged"])
-    _version_contents(ks, VERSION_B, ["intro unchanged", "new clause", "tail unchanged"])
+async def test_compare_versions_uses_server_side_diff(server: FastMCP, ks: FakeKS) -> None:
+    """The whole point of #25: one small GET, not two full version loads."""
+    _wire_diff(ks, _text_diff_payload())
 
     out = await call(
         server,
@@ -861,24 +883,244 @@ async def test_compare_versions_reports_added_and_removed(server: FastMCP, ks: F
         {"document_id": DOC_ID, "from_version_id": VERSION_A, "to_version_id": VERSION_B},
     )
 
-    assert out["added_chunks"] == 1
-    assert out["removed_chunks"] == 1
-    assert "-old clause" in out["unified_diff"]
-    assert "+new clause" in out["unified_diff"]
+    # Exactly one upstream call, and it is the diff route — not `/contents`.
+    assert ks.paths("GET") == [f"/v1/document_versions/{VERSION_B}/diff?from_version_id={VERSION_A}"]
+    assert not any("/contents" in path for path in ks.paths())
+
+    assert out["diff_format"] == "text"
+    assert out["unit"] == "lines"
+    assert (out["added"], out["removed"], out["modified"]) == (1, 1, 1)
+    assert out["truncated"] is False
+    assert out["degraded"] is False
+    assert str(out["document_id"]) == DOC_ID
     assert str(out["from_version_id"]) == VERSION_A
     assert str(out["to_version_id"]) == VERSION_B
+    assert out["from_version"] == 3
+    assert out["to_version"] == 4
+
+    rendered = out["rendered_diff"]
+    assert "--- v3" in rendered and "+++ v4" in rendered
+    # A `replace` row has to emit both sides or the model can't see the edit.
+    assert "-old clause" in rendered
+    assert "+new clause" in rendered
+    assert "+extra line" in rendered
+    assert "-dropped line" in rendered
+    assert " intro" in rendered
+
+
+async def test_compare_versions_defaults_to_predecessor(server: FastMCP, ks: FakeKS) -> None:
+    """Omitting `from_version_id` lets the backend pick the predecessor."""
+    _wire_diff(ks, _text_diff_payload())
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    # No `from_version_id` on the wire — the server resolves it.
+    assert ks.paths("GET") == [f"/v1/document_versions/{VERSION_B}/diff"]
+    assert out["document_id"] is None
+    assert str(out["from_version_id"]) == VERSION_A
 
 
 async def test_compare_versions_reports_no_differences(server: FastMCP, ks: FakeKS) -> None:
-    _version_contents(ks, VERSION_A, ["same"])
-    _version_contents(ks, VERSION_B, ["same"])
-
-    out = await call(
-        server,
-        "compare_versions",
-        {"document_id": DOC_ID, "from_version_id": VERSION_A, "to_version_id": VERSION_B},
+    _wire_diff(
+        ks,
+        _text_diff_payload(
+            text={"rows": [], "added": 0, "removed": 0, "changed": 0, "truncated": False}
+        ),
     )
 
-    assert out["added_chunks"] == 0
-    assert out["removed_chunks"] == 0
-    assert out["unified_diff"] == "(no differences)"
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert (out["added"], out["removed"], out["modified"]) == (0, 0, 0)
+    assert out["rendered_diff"] == "(no differences)"
+    assert out["summary"] == "No differences between the two versions."
+
+
+async def test_compare_versions_surfaces_truncated_and_degraded(
+    server: FastMCP, ks: FakeKS
+) -> None:
+    """A partial diff must not read as a complete one."""
+    payload = _text_diff_payload(degraded=True, degraded_reason="source could not be decoded")
+    payload["text"]["truncated"] = True
+    _wire_diff(ks, payload)
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["truncated"] is True
+    assert out["degraded"] is True
+    assert out["degraded_reason"] == "source could not be decoded"
+    assert "truncated" in out["summary"]
+    assert "degraded" in out["summary"]
+
+
+async def test_compare_versions_renders_first_version_against_empty(
+    server: FastMCP, ks: FakeKS
+) -> None:
+    """The first version diffs against nothing: `from_version_id` comes back null."""
+    _wire_diff(
+        ks,
+        _text_diff_payload(
+            from_version_id=None,
+            from_version=None,
+            text={
+                "rows": [{"type": "insert", "right_no": 1, "right": "brand new"}],
+                "added": 1,
+                "removed": 0,
+                "changed": 0,
+                "truncated": False,
+            },
+        ),
+    )
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["from_version_id"] is None
+    assert "--- (empty)" in out["rendered_diff"]
+    assert "+brand new" in out["rendered_diff"]
+
+
+async def test_compare_versions_renders_spreadsheet_cell_diff(
+    server: FastMCP, ks: FakeKS
+) -> None:
+    """A spreadsheet reports changed *cells*, so `unit` must say so."""
+    _wire_diff(
+        ks,
+        {
+            "from_version_id": VERSION_A,
+            "to_version_id": VERSION_B,
+            "from_version": 1,
+            "to_version": 2,
+            "format": "cells",
+            "cells": {
+                "changes": [
+                    {
+                        "sheet": "Q3",
+                        "address": "B7",
+                        "old": "1000",
+                        "new": "1250",
+                        "type": "modified",
+                        "formula_changed": True,
+                        "old_formula": "=A7*1",
+                        "new_formula": "=A7*1.25",
+                    }
+                ],
+                "added": 0,
+                "removed": 0,
+                "modified": 1,
+                "truncated": False,
+                "sheet_visibility_changes": [
+                    {"sheet": "Archive", "old_state": "hidden", "new_state": "visible"}
+                ],
+            },
+        },
+    )
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["diff_format"] == "cells"
+    assert out["unit"] == "cells"
+    assert out["modified"] == 1
+    assert "[modified] Q3!B7: 1000 -> 1250" in out["rendered_diff"]
+    # A formula edit can leave the cached value alone; it must still show up.
+    assert "formula =A7*1 -> =A7*1.25" in out["rendered_diff"]
+    assert "[sheet] Archive: hidden -> visible" in out["rendered_diff"]
+    assert "cells" in out["summary"]
+
+
+async def test_compare_versions_renders_structured_diff(server: FastMCP, ks: FakeKS) -> None:
+    _wire_diff(
+        ks,
+        {
+            "from_version_id": VERSION_A,
+            "to_version_id": VERSION_B,
+            "format": "structured",
+            "structured": {
+                "changes": [
+                    {"path": "terms.notice_days", "old": "30", "new": "60", "type": "modified"}
+                ],
+                "added": 0,
+                "removed": 0,
+                "modified": 1,
+                "truncated": False,
+                "omitted": 0,
+            },
+        },
+    )
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["unit"] == "fields"
+    assert "[modified] terms.notice_days: 30 -> 60" in out["rendered_diff"]
+
+
+async def test_compare_versions_renders_document_block_diff(server: FastMCP, ks: FakeKS) -> None:
+    """Numeric deltas are the payload that matters most in a contract diff."""
+    _wire_diff(
+        ks,
+        {
+            "from_version_id": VERSION_A,
+            "to_version_id": VERSION_B,
+            "format": "document",
+            "document": {
+                "blocks": [
+                    {
+                        "type": "modified",
+                        "kind": "paragraph",
+                        "change_class": "numeric",
+                        "from_paragraph_index": 11,
+                        "to_paragraph_index": 12,
+                        "old_text": "Fee is $1,000.",
+                        "new_text": "Fee is $1,250.",
+                        "numeric_delta": "+250",
+                        "numeric_pct": "25.0",
+                    }
+                ],
+                "added": 0,
+                "removed": 0,
+                "modified": 1,
+                "truncated": False,
+                "omitted_blocks": 0,
+                "surfaces_checked": ["body"],
+                "unaccepted_revisions": 0,
+                "decode_degraded": False,
+            },
+        },
+    )
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["unit"] == "blocks"
+    rendered = out["rendered_diff"]
+    assert "[modified/paragraph/numeric]" in rendered
+    # Anchored on the *right*-side paragraph index, so the agent can locate the
+    # change in the version it is actually reading.
+    assert "\u00b612:" in rendered
+    assert "Fee is $1,000. -> Fee is $1,250." in rendered
+    assert "(\u0394 +250, 25.0%)" in rendered
+
+
+async def test_compare_versions_reports_missing_payload_as_unavailable(
+    server: FastMCP, ks: FakeKS
+) -> None:
+    """A declared format with no payload must not read as 'identical'."""
+    _wire_diff(
+        ks,
+        {"from_version_id": VERSION_A, "to_version_id": VERSION_B, "format": "text"},
+    )
+
+    out = await call(server, "compare_versions", {"to_version_id": VERSION_B})
+
+    assert out["unit"] == "unknown"
+    assert "no text diff payload" in out["rendered_diff"]
+    assert "unavailable" in out["summary"]
+
+
+async def test_compare_versions_maps_rest_error(server: FastMCP, ks: FakeKS) -> None:
+    ks.on(
+        "GET",
+        rf"/v1/document_versions/{VERSION_B}/diff",
+        status=403,
+        json_body={"detail": "no read permission on the left version", "code": "forbidden"},
+    )
+
+    with pytest.raises(Exception, match="Forbidden"):
+        await call(server, "compare_versions", {"to_version_id": VERSION_B})

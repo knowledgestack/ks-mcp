@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # No `branches:` filter. With one, CI only ran for PRs targeting `main`, so
+  # every PR in a stack — which targets the branch below it, not `main` — got
+  # no checks at all and showed up for review with no verification signal.
   pull_request:
-    branches: [main]
 
 jobs:
   test:
