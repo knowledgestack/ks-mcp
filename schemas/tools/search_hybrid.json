@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Fused dense + BM25 search — the best default when you're unsure.\n\nRuns the semantic and keyword branches server-side and fuses the\nrankings, so a query that mixes a concept with a literal term (\"the\nrefund policy for SKU-4417\") retrieves well without you having to pick\na strategy. Scores are fusion scores and are not comparable to the\nscores returned by ``search_knowledge`` / ``search_keyword``.\n\nFollow up with ``cite`` / ``read_around`` exactly as for the other\nsearch tools.\n",
+  "inputSchema": {
+    "$defs": {
+      "ChunkType": {
+        "enum": [
+          "TEXT",
+          "TABLE",
+          "IMAGE",
+          "HTML",
+          "UNKNOWN"
+        ],
+        "title": "ChunkType",
+        "type": "string"
+      },
+      "HybridSearchProfile": {
+        "description": "Supported hybrid search weighting presets.",
+        "enum": [
+          "hybrid",
+          "dense",
+          "sparse"
+        ],
+        "title": "HybridSearchProfile",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "chunk_types": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/ChunkType"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only return chunks of these types.",
+        "title": "Chunk Types"
+      },
+      "parent_path_part_ids": {
+        "anyOf": [
+          {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Restrict to descendants of these path-parts.",
+        "title": "Parent Path Part Ids"
+      },
+      "profile": {
+        "$ref": "#/$defs/HybridSearchProfile",
+        "default": "hybrid",
+        "description": "Weighting preset: `hybrid` balances both branches, `dense` leans semantic, `sparse` leans keyword."
+      },
+      "query": {
+        "description": "Natural-language query for semantic retrieval.",
+        "maxLength": 4000,
+        "minLength": 1,
+        "title": "Query",
+        "type": "string"
+      },
+      "tag_ids": {
+        "anyOf": [
+          {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only chunks whose document carries all these tags.",
+        "title": "Tag Ids"
+      },
+      "top_k": {
+        "default": 5,
+        "description": "Max number of chunks to return (1-50).",
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Top K",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "search_hybridArguments",
+    "type": "object"
+  },
+  "name": "search_hybrid",
+  "outputSchema": {
+    "$defs": {
+      "ChunkHit": {
+        "properties": {
+          "chunk_id": {
+            "description": "Stable id for this chunk. Use it with `cite`, `read_around`, `view_chunk_image`, or `read` (which now also accepts a chunk_id). NOT the same as `path_part_id`.",
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "chunk_type": {
+            "$ref": "#/$defs/ChunkType",
+            "default": "TEXT"
+          },
+          "document_name": {
+            "description": "Name of the owning document.",
+            "title": "Document Name",
+            "type": "string"
+          },
+          "materialized_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Full root-to-leaf path of the chunk (e.g. `Folder/SubFolder/Document/Section/...`). Use this when displaying citations or grouping hits by document.",
+            "title": "Materialized Path"
+          },
+          "path_part_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "PDO id of the chunk node in the path tree. Pass to `get_info` for ancestry; do NOT confuse with `chunk_id` — they are different UUIDs.",
+            "title": "Path Part Id"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Relevance score from the search backend (higher = better).",
+            "title": "Score"
+          },
+          "text": {
+            "description": "Raw text of the chunk.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "document_name",
+          "text"
+        ],
+        "title": "ChunkHit",
+        "type": "object"
+      },
+      "ChunkType": {
+        "enum": [
+          "TEXT",
+          "TABLE",
+          "IMAGE",
+          "HTML",
+          "UNKNOWN"
+        ],
+        "title": "ChunkType",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "hits": {
+        "items": {
+          "$ref": "#/$defs/ChunkHit"
+        },
+        "title": "Hits",
+        "type": "array"
+      }
+    },
+    "required": [
+      "hits"
+    ],
+    "title": "SearchResult",
+    "type": "object"
+  }
+}

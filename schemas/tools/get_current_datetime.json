@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Return current date/time in both UTC and the tenant's timezone.\n\nUse whenever the user's query is relative (\"yesterday's notes\", \"this\nquarter's results\"). The tool consults ``get_organization_info`` for\nthe tenant's IANA timezone, falling back to UTC if unset.\n",
+  "inputSchema": {
+    "properties": {},
+    "title": "get_current_datetimeArguments",
+    "type": "object"
+  },
+  "name": "get_current_datetime",
+  "outputSchema": {
+    "properties": {
+      "iso_local": {
+        "description": "Current time in the tenant's timezone, ISO-8601.",
+        "title": "Iso Local",
+        "type": "string"
+      },
+      "iso_utc": {
+        "description": "Current time in UTC, ISO-8601.",
+        "title": "Iso Utc",
+        "type": "string"
+      },
+      "timezone": {
+        "description": "IANA tz used for ``iso_local``.",
+        "title": "Timezone",
+        "type": "string"
+      }
+    },
+    "required": [
+      "iso_utc",
+      "iso_local",
+      "timezone"
+    ],
+    "title": "CurrentDateTime",
+    "type": "object"
+  }
+}
