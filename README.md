@@ -298,6 +298,23 @@ number; call `cite(chunk_id)` when you need a page-aware footnote.
 
 Writes (ingest / delete / generate) are intentionally **not** exposed in Phase 1 or 2. See the [Roadmap](#roadmap) for the plan around admin-scoped write tools.
 
+### Prompts
+
+The server also ships MCP `prompts/`, which hard-code the recommended tool
+sequence for four common jobs. A capable model will derive `search →
+read_around → cite` by itself; a smaller one usually answers from the first
+snippet and never calls `cite`. These move that discipline server-side.
+
+| Prompt | Arguments | What it enforces |
+| --- | --- | --- |
+| `summarize-with-citations` | `subject`, `path_part_id?`, `max_words?` | Multiple query phrasings, `read_around` before writing, a citation tag per claim. |
+| `compare-documents` | `left`, `right`, `focus?` | Routes two *versions* to `compare_versions` instead of retrieval, scopes two *documents* separately, cites both sides. |
+| `expand-around-chunk` | `chunk_id`, `question?` | Neighbours + ancestry + image + lineage before interpreting a chunk. |
+| `answer-from-folder` | `question`, `path_part_id` | Refuses to answer from outside the folder rather than widening the search. |
+
+Rendering a prompt is pure text assembly — no API call, no tenant quota.
+Clients that don't support `prompts/` simply never list them.
+
 ## How the tools fit together
 
 You have **three paths** to a grounded answer. Pick the one that fits the agent
@@ -447,7 +464,7 @@ src/ks_mcp/
 
 See [ROADMAP.md](ROADMAP.md) and the [public issue tracker](https://github.com/knowledgestack/ks-mcp/issues) for everything on deck. **We prioritize what users thumbs-up** — if a milestone matters to you, react on the issue.
 
-- **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, prompt library.
+- **v0.2** — OAuth 2.1 device flow auth, resource templates for folders/documents, streaming partial results, ~~prompt library~~ ✅ shipped.
 - **v0.3** — admin-scoped **write tools** behind an explicit opt-in flag (`--allow-write`): ingest, delete, re-embed.
 - **v0.4** — hosted Streamable HTTP deployment guide (Fly.io, Cloud Run, Modal), per-tool rate limits.
 - **v0.5** — ~~hybrid search (dense + BM25 fusion)~~ ✅ shipped as `search_hybrid`; next up a `summarize_document` convenience tool and a `rerank_chunks` second pass.
