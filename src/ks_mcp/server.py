@@ -24,7 +24,7 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
-from ks_mcp import __version__
+from ks_mcp import __version__, prompts
 from ks_mcp.client import configure_logging, get_base_url, get_log_level
 from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search, workflows
 
@@ -47,7 +47,10 @@ INSTRUCTIONS = (
     "tools are `ask` (creates a thread + assistant message) and `extract`; both "
     "consume one message of tenant quota. Everything else only reads — though "
     "`compare_versions` is a privileged read and is audit-logged upstream, like "
-    "a download."
+    "a download.\n"
+    "If your client supports MCP prompts, `summarize-with-citations`, "
+    "`compare-documents`, `expand-around-chunk` and `answer-from-folder` carry "
+    "the recommended tool sequence for those jobs."
 )
 
 _MODULES = (search, read, browse, cite, ask, extract, org, provenance, workflows)
@@ -69,6 +72,9 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     mcp._mcp_server.version = __version__
     for module in _MODULES:
         module.register(mcp)
+    # Prompts are pure text — no API calls, no tenant quota — so they're always
+    # registered; a client that ignores prompts/ simply never lists them.
+    prompts.register(mcp)
     return mcp
 
 
