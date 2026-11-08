@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'emscripten'",
@@ -351,7 +351,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "ksapi", specifier = ">=3.26.4,<4" },
+    { name = "ksapi", specifier = ">=3.29.1" },
     { name = "mcp", specifier = ">=1.2,<2" },
     { name = "pydantic", specifier = ">=2.6,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
@@ -366,7 +366,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "ksapi"
-version = "3.26.4"
+version = "3.29.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -374,9 +374,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/59/30b43645c76cbeae4d8f73f48afe86e5f4530b74a70f51fc3107e3d251aa/ksapi-3.26.4.tar.gz", hash = "sha256:57f09145bed9a6f713667f56e7fa5fab6cbf1295ea0497bf8ddd5db6eed20317", size = 581311, upload-time = "2026-11-06T14:11:33.023Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/86/01bd065c4142a26b52539e811136d85459e32f70148012a9bd5c532a3075/ksapi-3.29.1.tar.gz", hash = "sha256:fd545ee867fdfcd8a3205220142bc4f15cc8fabd0f8bedb2d9b09e610dde6aac", size = 582600, upload-time = "2026-11-08T12:52:06.468Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/36/9754adb993b894fff5aa66d967bd2cc30de603caf1d64f2c5e9722549f3b/ksapi-3.26.4-py3-none-any.whl", hash = "sha256:5471b34131ba1d1b5de3f6a089cf8096cb1ab1c7ccbe4d049d60db3107f6fb9d", size = 1519766, upload-time = "2026-11-06T14:11:31.26Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/4e/d0570f4fac3123f0e9f3d9c3bdcf11c50caf7addb7d8bdf9a2e45f8ff96c/ksapi-3.29.1-py3-none-any.whl", hash = "sha256:cf26af90361cb1cd128ad49ee550df401e68e726c3fe0891fbb8a82d714400a4", size = 1519887, upload-time = "2026-11-08T12:52:04.732Z" },
 ]
 
 [[package]]
