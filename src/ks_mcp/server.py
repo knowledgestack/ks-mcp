@@ -43,6 +43,7 @@ from ks_mcp.client import (
     get_log_level,
     logger,
 )
+from ks_mcp.middleware import KnowledgeStackMCP
 from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search, workflows
 
 INSTRUCTIONS = (
@@ -123,7 +124,11 @@ def _transport_security() -> TransportSecuritySettings | None:
 
 
 def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
-    mcp = FastMCP(
+    # KnowledgeStackMCP, not FastMCP: it overrides `call_tool` to give every
+    # tool call one interception point (see middleware.py). It must be the
+    # class we *construct* — FastMCP binds `self.call_tool` during __init__, so
+    # patching the attribute afterwards would never reach real traffic.
+    mcp = KnowledgeStackMCP(
         name="knowledgestack",
         instructions=INSTRUCTIONS,
         host=host,

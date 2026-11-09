@@ -10,9 +10,14 @@ from mcp.server.fastmcp import FastMCP
 
 from ks_mcp.client import get_api_client
 from ks_mcp.errors import rest_to_mcp
+from ks_mcp.middleware import current_credentials, set_resolved_tenant
 from ks_mcp.schema import CurrentDateTime, OrganizationInfo
 
-_cached_tenant: OrganizationInfo | None = None
+# Single-tenant fallback cache, used only when no request credentials are
+# bound. In gateway mode (#16) the resolved tenant is stored on the request's
+# credentials instead — a module global here would serve tenant A's name and
+# timezone to tenant B.
+_ambient_tenant: OrganizationInfo | None = None
 
 
 def _enum_value(value: object, default: str) -> str:
@@ -29,9 +34,14 @@ async def _fetch_tenant() -> OrganizationInfo:
     via ``GET /v1/users/me`` (which reports ``current_tenant_id``) and then the
     tenant itself is fetched by id.
     """
-    global _cached_tenant
-    if _cached_tenant is not None:
-        return _cached_tenant
+    global _ambient_tenant
+
+    creds = current_credentials()
+    if creds is not None:
+        if creds.tenant is not None:
+            return creds.tenant
+    elif _ambient_tenant is not None:
+        return _ambient_tenant
 
     client = get_api_client()
     try:
@@ -43,13 +53,18 @@ async def _fetch_tenant() -> OrganizationInfo:
         raise rest_to_mcp(exc) from exc
 
     settings = tenant.settings
-    _cached_tenant = OrganizationInfo(
+    resolved = OrganizationInfo(
         tenant_id=tenant.id,
         name=tenant.name or "",
         default_language=_enum_value(getattr(settings, "language", None), "en"),
         timezone=_enum_value(getattr(settings, "timezone", None), "UTC"),
     )
-    return _cached_tenant
+    if creds is not None:
+        # Cached for this request only.
+        set_resolved_tenant(resolved)
+    else:
+        _ambient_tenant = resolved
+    return resolved
 
 
 def register(mcp: FastMCP) -> None:

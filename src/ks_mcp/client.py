@@ -12,7 +12,6 @@ the MCP event loop, so we don't use them.
 import logging
 import os
 import sys
-from functools import lru_cache
 from typing import Literal, cast
 
 import ksapi
@@ -120,17 +119,16 @@ def configure_logging() -> None:
     _LOG_CONFIGURED = True
 
 
-@lru_cache(maxsize=1)
-def get_api_client() -> ksapi.ApiClient:
-    """Return a process-singleton authenticated KS API client.
+def _build_api_client(base_url: str, api_key: str) -> ksapi.ApiClient:
+    """Construct an authenticated KS API client for one (host, key) pair.
 
     The KS backend's ``get_current_identity`` accepts
     ``Authorization: Bearer sk-user-...`` on every v1 route, so a single
     header injection is enough.
     """
-    configuration = ksapi.Configuration(host=get_base_url())
+    configuration = ksapi.Configuration(host=base_url)
     client = ksapi.ApiClient(configuration)
-    client.set_default_header("Authorization", f"Bearer {get_api_key()}")
+    client.set_default_header("Authorization", f"Bearer {api_key}")
 
     # `Configuration` exposes no timeout, and the SDK builds its httpx2 client
     # lazily with a 5s default. Build it up front via the SDK's own factory so
@@ -143,12 +141,63 @@ def get_api_client() -> ksapi.ApiClient:
 
     # The two settings most likely to be wrong when a user reports "it doesn't
     # work". Never log the key itself.
-    logger.debug("KS client ready: base_url=%s timeout=%ss", get_base_url(), get_timeout_s())
+    logger.debug("KS client ready: base_url=%s timeout=%ss", base_url, get_timeout_s())
     return client
 
 
+# Process-wide client, used when no request credentials are bound — i.e. stdio
+# and today's single-key HTTP mode. Pooled so repeated tool calls don't redo the
+# TLS handshake.
+_ambient_client: ksapi.ApiClient | None = None
+_ambient_identity: tuple[str, str] | None = None
+
+
+def get_api_client() -> ksapi.ApiClient:
+    """Return the KS API client for the in-flight request.
+
+    When request credentials are bound (multi-tenant gateway mode, #16) this
+    builds a client for *those* credentials and never consults the environment.
+    Such clients are deliberately **not** pooled: a cache keyed on anything
+    coarser than the key is how one tenant ends up talking to the API as
+    another, and that is a data breach rather than a performance problem.
+
+    With no credentials bound, behaviour is as before: one pooled client built
+    from ``KS_API_KEY`` / ``KS_BASE_URL``.
+    """
+    # Imported here: middleware imports `logger` from this module, so a
+    # top-level import would be circular.
+    from ks_mcp.middleware import current_credentials
+
+    creds = current_credentials()
+    if creds is not None:
+        return _build_api_client(creds.base_url, creds.api_key)
+
+    global _ambient_client, _ambient_identity
+    identity = (get_base_url(), get_api_key())
+    # Rebuild if the environment changed under us — tests monkeypatch
+    # KS_BASE_URL between cases, and silently serving a stale host made those
+    # failures look like network flakes.
+    if _ambient_client is None or _ambient_identity != identity:
+        _ambient_client = _build_api_client(*identity)
+        _ambient_identity = identity
+    return _ambient_client
+
+
 async def close_api_client() -> None:
-    """Close the pooled client and clear the cache (used on shutdown / in tests)."""
-    if get_api_client.cache_info().currsize:
-        await get_api_client().close()
-    get_api_client.cache_clear()
+    """Close the pooled ambient client (used on shutdown / in tests).
+
+    Request-scoped clients are not tracked here; they are closed by whatever
+    bound the credentials.
+    """
+    global _ambient_client, _ambient_identity
+    if _ambient_client is not None:
+        await _ambient_client.close()
+    _ambient_client = None
+    _ambient_identity = None
+
+
+def _reset_ambient_client_for_tests() -> None:
+    """Drop the pooled client without awaiting a close (test teardown only)."""
+    global _ambient_client, _ambient_identity
+    _ambient_client = None
+    _ambient_identity = None
