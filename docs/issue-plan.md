@@ -2,6 +2,16 @@
 
 Written 2026-11-09, against `main` at 0.3.0 and `ksapi` 3.26.6.
 
+> **Update (2026-11-09).** Every verdict below was then re-checked
+> adversarially, one agent per issue, each tasked with *refuting* it. That pass
+> changed a lot: **all six "ready" verdicts were downgraded to "partial"** (each
+> has a prerequisite this document missed), #18 was downgraded to blocked, and
+> #23/#24/#28 were upgraded off "blocked". It also found that the five upstream
+> tickets these issues wait on were **closed `NOT_PLANNED` on 2026-06-27**. The
+> per-issue corrections are recorded as comments on the GitHub issues
+> themselves, which are now labelled `ready` / `blocked-upstream` / `foundation`.
+> Treat the tables below as the first pass, not the conclusion.
+
 Every "blocked" claim below was checked against the installed SDK surface, not
 against the issue text. That matters: the tracker has been wrong twice
 already — #25 was filed as needing a backend route that had since shipped, and
@@ -171,11 +181,36 @@ specified rather than discovered:
 - **#28** cross-document contradiction graph — a service, not a route. Largest; schedule last.
 - **#3** device-authorization + token endpoints, plus
   `/.well-known/oauth-authorization-server`.
-  **Cheaper alternative worth considering:** `initiate_sso` + `oauth2_callback`
-  already exist, so an authorization-code + PKCE flow is reachable *today* and
-  satisfies the issue's actual acceptance criteria ("starts without
-  `KS_API_KEY`", "Inspector shows an authenticated session") without any
-  backend change. Device flow is the nicer UX; PKCE is the shippable one.
+  **Correction.** An earlier revision of this document claimed a PKCE flow over
+  the existing `initiate_sso` + `oauth2_callback` was reachable today and would
+  satisfy the acceptance criteria with no backend change. That was wrong, and an
+  adversarial re-check refuted it on five independent grounds:
+
+  1. **No PKCE exists.** Across the whole package there is no `code_challenge`,
+     `code_verifier`, `grant_type`, `response_type`, `scope` or `client_secret`.
+  2. **No client-chosen `redirect_uri`.** `initiate_sso` has no such parameter,
+     so ks-mcp cannot make the IdP land on a loopback it controls; the IdP
+     delivers `code` to the backend's own fixed callback and the CLI never sees it.
+  3. **Nothing to cache in a keyring.** `oauth2_callback` returns
+     `SignUpResponse` — 22 fields, all profile data, no token or expiry. The
+     session arrives as the `ks_uat` cookie, not a value in the body.
+  4. **The spec forbids it.** The OpenAPI description embedded in every ksapi
+     module states verbatim that the `ks_uat` cookie scheme "is browser-only and
+     cannot be used by headless clients".
+  5. **`refresh_uat` cannot bootstrap.** It requires a session you already hold
+     and returns `UserResponse`, not a token.
+
+  So device flow is not merely the nicer option — it is the only one, and #3 is
+  genuinely backend-blocked. Tracked upstream as `knowledgestack/ks-backend#826`.
+
+  **Separately, #3 conflates two different problems** and should be split: how
+  the ks-mcp *process* authenticates to KS (device flow, the stdio case), versus
+  how an *MCP client* authenticates to ks-mcp (its "Inspector shows an
+  authenticated session" criterion, which is MCP's own authorization spec and
+  closer to #16). Device flow would not satisfy the second, and satisfying the
+  second would not deliver the first. Also note criterion 1 ("starts without
+  `KS_API_KEY`") already passes vacuously today, because `get_api_key()` is read
+  lazily — it needs restating as "a tool *call* succeeds without `KS_API_KEY`".
 
 ## 6. #7 is one click away
 
