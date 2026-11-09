@@ -310,3 +310,44 @@ async def test_audit_falls_back_to_stderr_without_a_path(ks: FakeKS, caplog) -> 
 def test_policy_reports_its_audit_target(tmp_path) -> None:
     assert WritePolicy().audit_target == "stderr"
     assert WritePolicy(audit_path=tmp_path / "a.jsonl").audit_target.endswith("a.jsonl")
+
+
+async def test_audit_records_the_upstream_workflow_id_when_reported(
+    ks: FakeKS, tmp_path
+) -> None:
+    """#12 names "upstream workflow id" as a field, and most KS writes are
+    async — ingest/reembed return a Temporal id and finish later, so without it
+    an entry says a write started and gives nothing to correlate against.
+
+    Nothing populates it yet (no write tool exists). This pins the contract
+    #8-#11/#26 must honour, so the field isn't dead code by the time they land.
+    """
+    ks.on("GET", r"/v1/users/me", json_body=current_user_payload() | {"current_tenant_role": "ADMIN"})
+    audit = tmp_path / "audit.jsonl"
+    mcp = KnowledgeStackMCP(name="test")
+    captured: list[ToolCall] = []
+
+    @mcp.tool()
+    async def async_write(document_id: str) -> str:
+        """Mutating tool that kicks off a Temporal workflow."""
+        # What a real write tool does once the KS API returns.
+        writes.report_workflow_id(captured[0], "wf-abc-123")
+        return "started"
+
+    mark_write_tool("async_write")
+    install_write_hooks(mcp, WritePolicy(allow_write=True, audit_path=audit))
+    mcp.add_hooks(before=lambda c: captured.append(c))
+
+    await _invoke(mcp, "async_write", {"document_id": "d1"})
+
+    records = [json.loads(line) for line in audit.read_text().splitlines()]
+    outcome = records[-1]
+    assert outcome["event"] == "outcome"
+    assert outcome["workflow_id"] == "wf-abc-123"
+
+
+def test_report_workflow_id_ignores_none() -> None:
+    """A synchronous write has no workflow id; the field must be absent, not null."""
+    call = ToolCall(name="x", arguments={})
+    writes.report_workflow_id(call, None)
+    assert "workflow_id" not in call.state

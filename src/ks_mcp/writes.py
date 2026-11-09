@@ -262,9 +262,18 @@ def audit_outcome(policy: WritePolicy, call: ToolCall, identity: Identity | None
     record["duration_s"] = round(call.duration_s, 3) if call.duration_s is not None else None
     if call.error is not None:
         record["error"] = f"{type(call.error).__name__}: {call.error}"[:300]
+    # #12 names "upstream workflow id" as a required field, and most KS writes
+    # are asynchronous: ingest/reembed return a Temporal workflow id and the
+    # mutation completes later. Without it an audit entry says a write started
+    # but gives nothing to correlate against the pipeline that performed it.
+    #
+    # Nothing populates this yet because no write tool exists. The contract for
+    # #8-#11 and #26 is: set `call.state["workflow_id"]` once the upstream call
+    # returns. `report_workflow_id` is the supported way to do that; a tool that
+    # forgets leaves the field absent rather than wrong.
     workflow_id = call.state.get("workflow_id")
     if workflow_id:
-        record["workflow_id"] = workflow_id
+        record["workflow_id"] = str(workflow_id)
     try:
         _emit(policy, record)
     except Exception:
@@ -274,6 +283,17 @@ def audit_outcome(policy: WritePolicy, call: ToolCall, identity: Identity | None
 # ---------------------------------------------------------------------------
 # wiring
 # ---------------------------------------------------------------------------
+
+
+def report_workflow_id(call: ToolCall, workflow_id: str | None) -> None:
+    """Attach the upstream workflow id to this call's audit outcome record.
+
+    Write tools call this after the KS API returns. Separate function rather
+    than having tools poke ``call.state`` directly so the key name is in one
+    place and the audit log can't quietly lose the field to a typo.
+    """
+    if workflow_id:
+        call.state["workflow_id"] = workflow_id
 
 
 def install_write_hooks(mcp: Any, policy: WritePolicy) -> None:
