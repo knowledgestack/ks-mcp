@@ -54,3 +54,9 @@ jobs:
             git --no-pager diff -- schemas/
             exit 1
           fi
+
+      # server.json is what `mcp-publisher` reads at release time, so a stale
+      # version here publishes the wrong thing to the MCP registry. Same
+      # reasoning as above: name the fix in the log.
+      - name: Check version is in sync across all files
+        run: uv run python scripts/sync_version.py --check
