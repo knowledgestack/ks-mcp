@@ -7,6 +7,34 @@ From 0.2.0 onward this file is maintained by
 conventional-commit messages — see [Releasing](README.md#releasing). The 0.2.0
 entry below was written by hand, because that bump predates the automation.
 
+## [0.3.0](https://github.com/knowledgestack/ks-mcp/compare/knowledgestack-mcp-v0.2.0...knowledgestack-mcp-v0.3.0) (2026-11-09)
+
+
+### Features
+
+* **deploy:** reference Dockerfile, deploy configs, /healthz, Host allowlist ([bfa1268](https://github.com/knowledgestack/ks-mcp/commit/bfa12686e3e624a3be131b04cc5d7f39085ba0ea)), closes [#13](https://github.com/knowledgestack/ks-mcp/issues/13)
+* initial cookbook — 32 industry flagships across 10+ verticals ([a387acf](https://github.com/knowledgestack/ks-mcp/commit/a387acf1c0b2057e91a7fde0213a625e213d542f))
+* **prompts:** ship the MCP prompts/ library ([#198](https://github.com/knowledgestack/ks-mcp/issues/198)) ([113322b](https://github.com/knowledgestack/ks-mcp/commit/113322bb06ccb0cfec28c360c41c4c28f2e131df)), closes [#5](https://github.com/knowledgestack/ks-mcp/issues/5)
+* **provenance:** compute compare_versions diff server-side ([#196](https://github.com/knowledgestack/ks-mcp/issues/196)) ([6e6781f](https://github.com/knowledgestack/ks-mcp/commit/6e6781f7c520f1c45c4e7de9aab51dae2ae087f8))
+* **resources:** expose folders and documents as ks:// MCP resources ([#201](https://github.com/knowledgestack/ks-mcp/issues/201)) ([733b70f](https://github.com/knowledgestack/ks-mcp/commit/733b70f6adbabdc0d94b7922e746932cfa447808)), closes [#4](https://github.com/knowledgestack/ks-mcp/issues/4)
+* **schemas:** publish per-tool JSON Schema, interpreter-independent ([#199](https://github.com/knowledgestack/ks-mcp/issues/199)) ([ebd97c1](https://github.com/knowledgestack/ks-mcp/commit/ebd97c170da4c6aa287d281f85a039e11feffa71))
+* **tools:** add ask + cite, fix search/read wiring against ksapi ([#30](https://github.com/knowledgestack/ks-mcp/issues/30)) ([d311346](https://github.com/knowledgestack/ks-mcp/commit/d3113466ec2deeaf263f765f54042aa3ca1808a5))
+* **tools:** add phase-2 provenance tools (trace_chunk_lineage, compare_versions) ([bc10c79](https://github.com/knowledgestack/ks-mcp/commit/bc10c7951303f4f5c7a98e2256e1ffa1de873396))
+* **workflows:** add read-only get_workflow_status tool ([#197](https://github.com/knowledgestack/ks-mcp/issues/197)) ([24cc84c](https://github.com/knowledgestack/ks-mcp/commit/24cc84c675c9e1a671e99bff154fd902d5968b0c)), closes [#29](https://github.com/knowledgestack/ks-mcp/issues/29)
+
+
+### Bug Fixes
+
+* **sdk:** port to ksapi 3.26.4 (async-first), unbreak install, add extract & search_hybrid ([#194](https://github.com/knowledgestack/ks-mcp/issues/194)) ([38eea84](https://github.com/knowledgestack/ks-mcp/commit/38eea843fe17f9e0e2c7e4564c355e86fa75c401))
+
+
+### Documentation
+
+* expand README, add ROADMAP + MCP registry server.json ([625a181](https://github.com/knowledgestack/ks-mcp/commit/625a181506ad4271aa81a72209d36ed8191471b3))
+* link sibling repos (cookbook, sdk-python, sdk-ts, docs) ([#1](https://github.com/knowledgestack/ks-mcp/issues/1)) ([2038d49](https://github.com/knowledgestack/ks-mcp/commit/2038d49fe2f39252fd57f33305532a659177f207))
+* **readme:** rewrite heading + replace pre-publish PyPI badges ([#32](https://github.com/knowledgestack/ks-mcp/issues/32)) ([c0e154b](https://github.com/knowledgestack/ks-mcp/commit/c0e154beebfeace1bca7c1262aa27c9db18e8334))
+* reposition README as developer acceleration layer; fix CI; add framework links ([58683d2](https://github.com/knowledgestack/ks-mcp/commit/58683d2dc36b2755110842af847d3bf4a64aa88e))
+
 ## 0.2.0 (2026-11-09)
 
 ### ⚠ BREAKING CHANGES
