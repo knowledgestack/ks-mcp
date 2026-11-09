@@ -18,6 +18,12 @@ on:
     # check stays red until an unrelated push.
     types: [opened, edited, reopened, synchronize]
 
+# Read-only on purpose. The action's `wip` feature (keep the check *pending*
+# while the title says "[WIP]") is the only thing here that needs
+# `pull-requests: write`, and it fails with "Resource not accessible by
+# integration" without it. Not worth granting write to every run of a lint
+# job for — GitHub's native draft PRs already cover that. If you re-add
+# `wip: true`, you must widen this to `write`.
 permissions:
   pull-requests: read
 
@@ -55,4 +61,3 @@ jobs:
               fix(ask): read citations from the persisted message
             Mark a breaking change with `!`, e.g. `feat(provenance)!: ...` —
             while we are pre-1.0 that bumps the minor version.
-          wip: true
