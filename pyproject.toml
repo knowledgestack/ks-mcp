@@ -1,6 +1,6 @@
 [project]
 name = "knowledgestack-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server exposing Knowledge Stack tools to any agent framework."
 readme = "README.md"
 license = { text = "MIT" }

@@ -154,5 +154,5 @@
       "summary": "Fetch the image bytes for an IMAGE-type chunk and return them to the agent."
     }
   ],
-  "version": "0.2.0"
+  "version": "0.3.0"
 }
