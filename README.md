@@ -113,7 +113,7 @@ uvx --from git+https://github.com/knowledgestack/ks-mcp knowledgestack-mcp --che
 ```
 
 ```text
-ks-mcp 0.3.0
+ks-mcp 0.3.1
 KS_BASE_URL: https://api.knowledgestack.ai
 OK: authenticated to tenant 'Acme Corp' (6f1c…)
     language=en timezone=America/New_York
