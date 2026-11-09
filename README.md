@@ -527,7 +527,54 @@ src/ks_mcp/
     ├── org.py        # get_organization_info, get_current_datetime
     ├── provenance.py # trace_chunk_lineage, compare_versions
     └── workflows.py  # get_workflow_status
+
+src/ks_mcp/prompts.py     # MCP prompts/ library
+src/ks_mcp/resources.py   # ks:// MCP resources
+src/ks_mcp/schema_export.py
+scripts/export_schemas.py # regenerates schemas/
+scripts/sync_version.py   # propagates the version from pyproject.toml
 ```
+
+## Releasing
+
+Versioning is driven by [conventional commits](https://www.conventionalcommits.org/).
+Merging to `main` does not bump anything by itself — instead
+[release-please](https://github.com/googleapis/release-please) reads the commit
+messages since the last tag and maintains a release PR:
+
+```
+conventional commits on main
+   └── release-please opens/updates "chore(main): release X.Y.Z"
+         └── you merge it  →  tag vX.Y.Z
+               └── release.yml publishes to PyPI, then the MCP registry
+```
+
+While the project is pre-1.0 (`bump-minor-pre-major`):
+
+| commit prefix | effect |
+| --- | --- |
+| `fix:` | patch — `0.2.0` → `0.2.1` |
+| `feat:` | minor — `0.2.0` → `0.3.0` |
+| `feat!:` / `BREAKING CHANGE:` | minor, **not** major, until 1.0.0 |
+| `docs:` `ci:` `chore:` `test:` `refactor:` | no release on their own |
+
+Because this repo squash-merges, the **PR title** becomes the commit message on
+`main` — so the title is what versioning reads. `pr-title-lint.yml` enforces
+that it parses; a title that doesn't is silently ignored by release-please,
+which is how a feature can land with no bump and nothing to show for it.
+
+`pyproject.toml` `[project] version` is the single source of truth.
+`__version__` is read from installed package metadata, and every other file
+that restates the version is propagated by:
+
+```bash
+uv run python scripts/sync_version.py          # fix
+uv run python scripts/sync_version.py --check  # report drift (CI runs this)
+```
+
+That covers `server.json` — which `mcp-publisher` reads, so a stale value
+publishes the wrong version to the MCP registry — plus `uv.lock`,
+`schemas/index.json` and the sample output above.
 
 ## Roadmap
 

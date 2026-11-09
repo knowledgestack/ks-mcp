@@ -1,0 +1,89 @@
+name: release-please
+
+# Conventional-commit driven versioning.
+#
+# Merging to `main` no longer leaves the version behind: release-please reads
+# the conventional-commit messages since the last tag, works out the next
+# version, and maintains a "chore(main): release X.Y.Z" PR that bumps every
+# version file and writes CHANGELOG.md. Merging *that* PR creates tag
+# `vX.Y.Z`, which is what the existing tag-driven `release.yml` consumes to
+# publish to PyPI and the MCP registry.
+#
+# So the release path is: conventional commits -> release PR -> tag -> publish.
+# `release.yml` is untouched and still only reacts to tags.
+#
+# What bumps what (with bump-minor-pre-major while we are pre-1.0):
+#   fix:            -> patch   (0.2.0 -> 0.2.1)
+#   feat:           -> minor   (0.2.0 -> 0.3.0)
+#   feat!: / BREAKING CHANGE: -> minor, not major, until 1.0.0
+#   docs:/ci:/chore:/test:/refactor: -> no release on their own
+#
+# Commits that don't parse as conventional are ignored for versioning, which
+# is why `pr-title-lint.yml` guards the squash titles that become them.
+
+on:
+  push:
+    branches: [main]
+  # Lets you force a release-PR refresh without pushing an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# A second push while a release PR is being written would race on the same
+# branch; queue instead of cancelling so no push is silently skipped.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      # `pr` is a top-level output (not path-prefixed like `.--version`), and is
+      # unset when there is nothing to release — hence the guard before
+      # fromJSON. Field name is `headBranchName`, per release-please's
+      # PullRequest interface.
+      pr_branch: ${{ steps.release.outputs.prs_created == 'true' && fromJSON(steps.release.outputs.pr).headBranchName || '' }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # KS_BOT_PAT, not GITHUB_TOKEN: a PR opened by GITHUB_TOKEN does not
+          # trigger other workflows, so the release PR would arrive with no CI
+          # and nothing would verify the bump. Same token bump-ksapi.yml uses.
+          token: ${{ secrets.KS_BOT_PAT }}
+
+  # release-please updates the files its config lists, but it cannot regenerate
+  # derived ones. `uv.lock` records the project's own version and would be left
+  # stale, failing `uv lock --check` and this repo's version-drift test on the
+  # release PR itself. This step closes that gap in place.
+  sync-release-pr:
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: needs.release-please.outputs.pr_branch != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.pr_branch }}
+          token: ${{ secrets.KS_BOT_PAT }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Sync every file that restates the version
+        run: uv run python scripts/sync_version.py
+
+      - name: Commit if anything changed
+        run: |
+          if git diff --quiet; then
+            echo "already in sync; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): sync version across generated files"
+          git push
