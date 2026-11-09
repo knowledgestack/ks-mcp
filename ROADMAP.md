@@ -2,6 +2,11 @@
 
 `ks-mcp` is in active development. This is our public plan — each item below is tracked as a GitHub issue, grouped into a milestone.
 
+> **Sequencing and dependencies:** [`docs/issue-plan.md`](docs/issue-plan.md)
+> works through every open issue — which are ready to build today, which are
+> genuinely waiting on ks-backend endpoints (each checked against the SDK
+> rather than the issue text), and the order that avoids building things twice.
+
 > 👍 **Thumbs-up the issues that matter most to you.** We sort milestones by community signal — your reaction directly moves things up the queue. ⭐ Starring the repo helps too.
 
 > **Legend:** 🟢 shipped · 🟡 in progress · ⚪ planned
