@@ -7,6 +7,13 @@ From 0.2.0 onward this file is maintained by
 conventional-commit messages — see [Releasing](README.md#releasing). The 0.2.0
 entry below was written by hand, because that bump predates the automation.
 
+## [0.3.1](https://github.com/knowledgestack/ks-mcp/compare/v0.3.0...v0.3.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ci:** tag releases as v* so the publish workflow actually fires ([aae3184](https://github.com/knowledgestack/ks-mcp/commit/aae3184925abd827c489ae198fc083fe6859abae))
+
 ## [0.3.0](https://github.com/knowledgestack/ks-mcp/compare/knowledgestack-mcp-v0.2.0...knowledgestack-mcp-v0.3.0) (2026-11-09)
 
 
