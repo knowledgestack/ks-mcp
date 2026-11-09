@@ -166,11 +166,25 @@ def get_api_client() -> ksapi.ApiClient:
     """
     # Imported here: middleware imports `logger` from this module, so a
     # top-level import would be circular.
-    from ks_mcp.middleware import current_credentials
+    from ks_mcp.middleware import (
+        current_credentials,
+        current_request_client,
+        set_request_client,
+    )
 
     creds = current_credentials()
     if creds is not None:
-        return _build_api_client(creds.base_url, creds.api_key)
+        # One client per request, not per call. `_build_api_client` eagerly
+        # constructs an httpx2.AsyncClient with its own connection pool and
+        # ssl_context, so building one per `get_api_client()` leaked both —
+        # and a single gated write call makes at least two calls (the identity
+        # lookup plus the tool body). `call_tool` closes this in a finally.
+        existing = current_request_client()
+        if existing is not None:
+            return existing
+        client = _build_api_client(creds.base_url, creds.api_key)
+        set_request_client(client)
+        return client
 
     global _ambient_client, _ambient_identity
     identity = (get_base_url(), get_api_key())

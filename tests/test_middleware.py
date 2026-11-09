@@ -312,9 +312,128 @@ def test_api_client_follows_bound_credentials(monkeypatch: pytest.MonkeyPatch) -
     _reset_ambient_client_for_tests()
 
 
-def test_request_scoped_clients_are_not_pooled_across_tenants() -> None:
-    """Deliberately unpooled: a cache keyed coarser than the key is how one
-    tenant ends up talking to the API as another."""
+async def test_contextvars_set_outside_the_call_do_not_reach_a_session_task() -> None:
+    """Why credentials are bound inside `call_tool` and never in ASGI middleware.
+
+    Over Streamable HTTP in the default stateful mode, tool calls run in a
+    per-session task that `StreamableHTTPSessionManager` starts **once**, with
+    `task_group.start(run_server)`. `asyncio.create_task` copies the caller's
+    context at creation, so that task permanently inherits the context of the
+    request that *initialised the session*.
+
+    Binding credentials in middleware would therefore pin every later call in
+    that session to the first caller's credentials — the cross-tenant bleed
+    this module exists to prevent. This reproduces the mechanism directly, so
+    nobody re-introduces the "just set it in middleware" design.
+    """
+    seen: list[str | None] = []
+    stop = asyncio.Event()
+
+    async def session_task() -> None:
+        # Stands in for mcp's run_server: started once, lives for the session.
+        for _ in range(3):
+            await asyncio.sleep(0)
+            creds = current_credentials()
+            seen.append(creds.api_key if creds else None)
+        stop.set()
+
+    async def initialising_request() -> None:
+        with request_credentials("sk-user-session-initialiser", "https://a.example.com"):
+            asyncio.create_task(session_task())
+            await stop.wait()
+
+    async def later_request() -> None:
+        with request_credentials("sk-user-second-caller", "https://b.example.com"):
+            await asyncio.sleep(0)
+
+    await asyncio.gather(initialising_request(), later_request())
+
+    assert set(seen) == {"sk-user-session-initialiser"}, (
+        "the session task saw a later request's credentials, or none; either way "
+        "the inheritance model assumed here has changed and the binding strategy "
+        "in middleware.py should be re-checked"
+    )
+
+
+async def test_resolver_binds_credentials_per_call() -> None:
+    """The supported #16 path: bind inside call_tool, from the per-message request."""
+    mcp, _ = _server_with_ping()
+    observed: list[str | None] = []
+    mcp.add_hooks(
+        before=lambda c: observed.append(c.credentials.api_key if c.credentials else None)
+    )
+
+    keys = iter(["sk-user-one", "sk-user-two"])
+    mcp.set_credentials_resolver(
+        lambda request: RequestCredentials(api_key=next(keys), base_url="https://x.example.com")
+    )
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+    await _invoke_via_low_level(mcp, "ping", {"value": 2})
+
+    assert observed == ["sk-user-one", "sk-user-two"], (
+        "consecutive calls did not get their own credentials"
+    )
+
+
+async def test_credentials_are_unbound_again_after_the_call() -> None:
+    mcp, _ = _server_with_ping()
+    mcp.set_credentials_resolver(
+        lambda request: RequestCredentials(api_key="sk-user-x", base_url="https://x.example.com")
+    )
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert current_credentials() is None
+
+
+async def test_a_resolver_returning_none_falls_back_to_the_environment() -> None:
+    mcp, _ = _server_with_ping()
+    observed: list[object] = []
+    mcp.add_hooks(before=lambda c: observed.append(c.credentials))
+    mcp.set_credentials_resolver(lambda request: None)
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert observed == [None]
+
+
+async def test_the_request_scoped_client_is_closed_after_the_call() -> None:
+    """Request clients aren't pooled, so an unclosed one leaks a connection
+    pool and an ssl_context per call."""
+    from ks_mcp.middleware import current_request_client
+
+    mcp = KnowledgeStackMCP(name="test")
+    captured: list[object] = []
+
+    @mcp.tool()
+    async def uses_client() -> str:
+        """Touches the KS client the way a real tool does."""
+        from ks_mcp.client import get_api_client
+
+        captured.append(get_api_client())
+        # Same client on a second call within the request, not a second one.
+        captured.append(get_api_client())
+        return "ok"
+
+    mcp.set_credentials_resolver(
+        lambda request: RequestCredentials(api_key="sk-user-x", base_url="https://x.example.com")
+    )
+
+    await _invoke_via_low_level(mcp, "uses_client", {})
+
+    assert captured[0] is captured[1], "a second get_api_client() built another client"
+    assert current_request_client() is None, "the request client was not released"
+
+
+def test_request_scoped_clients_are_not_shared_across_tenants() -> None:
+    """One client per request, never reused under different credentials.
+
+    Caught a real bug when written: `request_credentials` reset the credentials
+    contextvar but not the cached-client one, so a second binding in the same
+    task was handed the *first* tenant's client — the same bleed, by another
+    route. Both are now scoped together.
+    """
     from ks_mcp.client import get_api_client
 
     with request_credentials("sk-user-a", "https://a.example.com"):
@@ -324,6 +443,7 @@ def test_request_scoped_clients_are_not_pooled_across_tenants() -> None:
 
     assert a is not b
     assert a.default_headers["Authorization"] != b.default_headers["Authorization"]
+    assert b.configuration.host == "https://b.example.com"
 
 
 async def test_build_server_uses_the_intercepting_subclass() -> None:
