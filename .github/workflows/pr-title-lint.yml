@@ -1,0 +1,58 @@
+name: pr-title-lint
+
+# The other half of conventional-commit versioning.
+#
+# This repo squash-merges, so a PR's *title* becomes the commit message on
+# `main` — and that message is the only input release-please has for working
+# out the next version. A title that doesn't parse as a conventional commit
+# isn't an error anywhere: it merges fine, and release-please silently ignores
+# it. A feature can land with no version bump and nothing reports it.
+# `cd3ccca Update project name in README (#31)` is already in history that way.
+#
+# So the title is linted here rather than the commits, because the title is
+# what survives the squash.
+
+on:
+  pull_request:
+    # `edited` matters: titles are usually fixed by editing, and without it the
+    # check stays red until an unrelated push.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Kept in step with `changelog-sections` in release-please-config.json.
+          types: |
+            feat
+            fix
+            perf
+            docs
+            deps
+            refactor
+            test
+            ci
+            chore
+            build
+            revert
+          # Scope is optional, but when present it must be lowercase so
+          # `feat(Tools)` and `feat(tools)` don't split the changelog in two.
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+[^.]$
+          subjectPatternError: |
+            The subject "{subject}" is invalid for the "{type}" type.
+
+            Write it lowercase and without a trailing period, as an imperative
+            describing what the change does:
+              feat(search): add a reranking pass
+              fix(ask): read citations from the persisted message
+            Mark a breaking change with `!`, e.g. `feat(provenance)!: ...` —
+            while we are pre-1.0 that bumps the minor version.
+          wip: true
