@@ -48,6 +48,30 @@ def get_base_url() -> str:
     return _env("KS_BASE_URL", required=False, default=DEFAULT_BASE_URL)
 
 
+def get_effective_api_key() -> str:
+    """The API key for the in-flight request — bound credentials, else the env.
+
+    Anything that talks to KS *outside* the pooled ``ApiClient`` must use this
+    rather than :func:`get_api_key`, or it authenticates as the process instead
+    of as the caller. ``ask`` streams its SSE response over its own httpx
+    client and so has to: without this it created the thread as the caller and
+    then read the stream as the process, which in gateway mode (#16) is a
+    cross-identity mismatch, not just an inconsistency.
+    """
+    from ks_mcp.middleware import current_credentials
+
+    creds = current_credentials()
+    return creds.api_key if creds is not None else get_api_key()
+
+
+def get_effective_base_url() -> str:
+    """The KS host for the in-flight request — bound credentials, else the env."""
+    from ks_mcp.middleware import current_credentials
+
+    creds = current_credentials()
+    return creds.base_url if creds is not None else get_base_url()
+
+
 def get_timeout_s() -> float:
     """Return the upstream HTTP timeout from ``KS_TIMEOUT_S`` (seconds)."""
     raw = os.environ.get("KS_TIMEOUT_S")

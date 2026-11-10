@@ -446,6 +446,89 @@ def test_request_scoped_clients_are_not_shared_across_tenants() -> None:
     assert b.configuration.host == "https://b.example.com"
 
 
+def test_effective_credentials_follow_the_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anything talking to KS outside the pooled ApiClient must use these.
+
+    `ask` streams over its own httpx client. Reading the env there made it
+    create the thread as the caller and then read the stream back as the
+    *process* — in gateway mode a cross-identity mismatch, not merely an
+    inconsistency.
+    """
+    from ks_mcp.client import get_effective_api_key, get_effective_base_url
+
+    monkeypatch.setenv("KS_API_KEY", "sk-user-process")
+    monkeypatch.setenv("KS_BASE_URL", "https://process.example.com")
+
+    assert get_effective_api_key() == "sk-user-process"
+    assert get_effective_base_url() == "https://process.example.com"
+
+    with request_credentials("sk-user-caller", "https://caller.example.com"):
+        assert get_effective_api_key() == "sk-user-caller"
+        assert get_effective_base_url() == "https://caller.example.com"
+
+    assert get_effective_api_key() == "sk-user-process"
+
+
+def test_ask_streams_with_the_effective_credentials() -> None:
+    """Pins the call site, since the bug was a plain `get_api_key()` there."""
+    import inspect
+
+    from ks_mcp.tools import ask
+
+    source = inspect.getsource(ask)
+    assert "get_effective_api_key()" in source
+    assert "get_effective_base_url()" in source
+    # The env readers must not be reachable from the streaming path again.
+    assert "get_api_key()" not in source
+    assert "get_base_url()" not in source
+
+
+async def test_an_already_entered_hook_is_unwound_when_a_later_one_refuses() -> None:
+    """A refusal must not leak an earlier hook's span or concurrency slot.
+
+    This is what "behaves like nested context managers" has to mean. Before the
+    fix, hook A's `before` ran, hook B's `before` raised, and A's `after` never
+    ran — so #15 would leak a span and #14 would leak the slot it had just
+    acquired, starving its own limiter.
+    """
+    mcp, ran = _server_with_ping()
+    order: list[str] = []
+
+    mcp.add_hooks(
+        before=lambda c: order.append("A.enter"), after=lambda c: order.append("A.exit")
+    )
+
+    def refuse(call) -> None:
+        raise RuntimeError("rate limited")
+
+    mcp.add_hooks(before=refuse, after=lambda c: order.append("B.exit"))
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert ran == [], "the tool body ran despite a refusal"
+    assert order == ["A.enter", "A.exit"], (
+        f"expected A to unwind and B never to have entered, got {order}"
+    )
+
+
+async def test_hook_pairs_stay_matched_when_registered_separately() -> None:
+    """`add_hooks(before=f)` then `add_hooks(after=g)` must not pair f with g.
+
+    Two independent lists matched them by positional accident, so the unwind
+    would have run the wrong partner.
+    """
+    mcp, _ = _server_with_ping()
+    order: list[str] = []
+
+    mcp.add_hooks(before=lambda c: order.append("lonely-before"))
+    mcp.add_hooks(after=lambda c: order.append("lonely-after"))
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert order == ["lonely-before", "lonely-after"]
+    assert mcp._before_hooks and mcp._after_hooks
+
+
 async def test_build_server_uses_the_intercepting_subclass() -> None:
     """If this regresses, #14/#15/#16 silently lose their interception point."""
     from ks_mcp.server import build_server

@@ -214,16 +214,16 @@ class KnowledgeStackMCP(FastMCP):
     limiter's (#14) decision rather than the other way round.
 
     A hook raising from `before` aborts the call — that is how #14 refuses one.
-    A hook raising from `after` must never mask the tool's own result or error,
-    so those are caught and logged.
+    Pairs that already entered are still unwound, so a refusal cannot leak an
+    earlier hook's span or concurrency slot. A hook raising from `after` must
+    never mask the tool's own result or error, so those are caught and logged.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # Set before super().__init__ — it calls _setup_handlers, which binds
         # self.call_tool, and an incoming call could in principle arrive before
         # we return.
-        self._before_hooks: list[BeforeHook] = []
-        self._after_hooks: list[AfterHook] = []
+        self._hooks: list[tuple[BeforeHook | None, AfterHook | None]] = []
         self._credentials_resolver: CredentialsResolver | None = None
         super().__init__(*args, **kwargs)
 
@@ -255,11 +255,25 @@ class KnowledgeStackMCP(FastMCP):
             return None
 
     def add_hooks(self, *, before: BeforeHook | None = None, after: AfterHook | None = None) -> None:
-        """Register a before/after pair. Either may be omitted."""
-        if before is not None:
-            self._before_hooks.append(before)
-        if after is not None:
-            self._after_hooks.append(after)
+        """Register a before/after pair. Either may be omitted.
+
+        Stored as a *pair* rather than appended to two independent lists: with
+        separate lists, ``add_hooks(before=f)`` followed by
+        ``add_hooks(after=g)`` leaves them matched only by positional accident,
+        and the unwind in ``_call_tool_with_hooks`` would run the wrong
+        partner.
+        """
+        self._hooks.append((before, after))
+
+    @property
+    def _before_hooks(self) -> list[BeforeHook]:
+        """Registered before-hooks, in order (read-only view, for tests)."""
+        return [b for b, _ in self._hooks if b is not None]
+
+    @property
+    def _after_hooks(self) -> list[AfterHook]:
+        """Registered after-hooks, in order (read-only view, for tests)."""
+        return [a for _, a in self._hooks if a is not None]
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
@@ -303,13 +317,21 @@ class KnowledgeStackMCP(FastMCP):
             started_at=time.monotonic(),
         )
 
-        for hook in self._before_hooks:
-            result = hook(call)
-            if result is not None:
-                await result
-
         call_token = _current_call.set(call)
+        # How many pairs got through `before`. Anything that entered must be
+        # unwound even if a *later* before-hook refuses the call: otherwise a
+        # span opened by #15 is never closed, and a concurrency slot acquired
+        # by #14 is never released — so the limiter would starve itself every
+        # time a later hook rejected. This is what "behaves like nested
+        # context managers" has to mean.
+        entered = 0
         try:
+            for before, _after in self._hooks:
+                if before is not None:
+                    result = before(call)
+                    if result is not None:
+                        await result
+                entered += 1
             return await super().call_tool(name, arguments)
         except BaseException as exc:
             call.failed = True
@@ -318,9 +340,11 @@ class KnowledgeStackMCP(FastMCP):
         finally:
             _current_call.reset(call_token)
             call.duration_s = time.monotonic() - call.started_at
-            for hook in reversed(self._after_hooks):
+            for _before, after in reversed(self._hooks[:entered]):
+                if after is None:
+                    continue
                 try:
-                    outcome = hook(call)
+                    outcome = after(call)
                     if outcome is not None:
                         await outcome
                 except Exception:

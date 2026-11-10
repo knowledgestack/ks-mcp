@@ -16,8 +16,8 @@ from pydantic import Field
 from ks_mcp.client import (
     DEFAULT_AGENT_TIMEOUT_S,
     get_api_client,
-    get_api_key,
-    get_base_url,
+    get_effective_api_key,
+    get_effective_base_url,
 )
 from ks_mcp.errors import rest_to_mcp
 from ks_mcp.schema import AskCitation, AskResult
@@ -298,7 +298,12 @@ def register(mcp: FastMCP) -> None:
         thread = await _ensure_thread(client, thread_id, question)
         workflow_id = await _send_user_message(client, thread, question, output_language)
 
-        acc, timed_out = await _stream_answer(get_base_url(), get_api_key(), thread, timeout_s)
+        # Effective, not env: this stream runs over its own httpx client rather
+        # than the pooled ApiClient, so reading the env here would create the
+        # thread as the caller and then read it back as the process.
+        acc, timed_out = await _stream_answer(
+            get_effective_base_url(), get_effective_api_key(), thread, timeout_s
+        )
 
         text: str | None = None
         citations: list[AskCitation] = []
