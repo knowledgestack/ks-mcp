@@ -174,6 +174,9 @@ def _build_api_client(base_url: str, api_key: str) -> ksapi.ApiClient:
 # TLS handshake.
 _ambient_client: ksapi.ApiClient | None = None
 _ambient_identity: tuple[str, str] | None = None
+# Ambient clients replaced because KS_BASE_URL/KS_API_KEY changed mid-process.
+# Their pools are still open and only an async context can close them.
+_superseded_clients: list[ksapi.ApiClient] = []
 
 
 def get_api_client() -> ksapi.ApiClient:
@@ -217,13 +220,13 @@ def get_api_client() -> ksapi.ApiClient:
     # failures look like network flakes.
     if _ambient_client is None or _ambient_identity != identity:
         if _ambient_client is not None:
-            # The outgoing client owns an httpx connection pool. `get_api_client`
-            # is sync so it cannot await `aclose()`; drop the pool explicitly
-            # rather than stranding it until GC, which may never run it.
-            stranded = _ambient_client.rest_client.pool_manager
-            if stranded is not None:
-                _ambient_client.rest_client.pool_manager = None
-                logger.debug("dropped the pool of the superseded ambient KS client")
+            # The outgoing client owns an open httpx connection pool. This
+            # function is sync, so it cannot await `aclose()` — and merely
+            # nulling `pool_manager` does NOT close it (measured:
+            # `is_closed` stays False) and makes `ksapi.rest` lazily build a
+            # *second* pool at the SDK's 5s default on next use, losing
+            # KS_TIMEOUT_S. So hand it to `close_api_client`, which can await.
+            _superseded_clients.append(_ambient_client)
         _ambient_client = _build_api_client(*identity)
         _ambient_identity = identity
     return _ambient_client
@@ -240,6 +243,13 @@ async def close_api_client() -> None:
         await _ambient_client.close()
     _ambient_client = None
     _ambient_identity = None
+    # Clients superseded by an env change still hold open pools.
+    while _superseded_clients:
+        superseded = _superseded_clients.pop()
+        try:
+            await superseded.close()
+        except Exception:
+            logger.exception("failed closing a superseded KS client")
 
 
 def _reset_ambient_client_for_tests() -> None:
@@ -247,3 +257,4 @@ def _reset_ambient_client_for_tests() -> None:
     global _ambient_client, _ambient_identity
     _ambient_client = None
     _ambient_identity = None
+    _superseded_clients.clear()

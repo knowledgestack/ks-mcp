@@ -132,9 +132,11 @@ Export a Knowledge Stack API key (issued from the dashboard — see the [cookboo
 | `KS_API_KEY`   | yes      | —                                   | A `sk-user-…` key scoped to a single tenant user.           |
 | `KS_BASE_URL`  | no       | `https://api.knowledgestack.ai`     | Point at staging or a self-hosted deployment.               |
 | `KS_TIMEOUT_S` | no       | `30`                                | HTTP timeout for upstream KS calls. Must be > 0. (Raises the SDK's own 5s default.) |
-| `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Sets the whole server's verbosity; logs go to stderr, never stdout. |
+| `KS_LOG_LEVEL` | no       | `INFO`                              | `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`. Logs go to stderr, never stdout. Governs everything **except the write audit log**, which is pinned at INFO on its own logger so a quiet level cannot suppress it. |
 | `KS_ALLOWED_HOSTS` | no   | _(unset)_                           | Comma-separated `Host` allowlist for `--http`, e.g. `mcp.example.com` (a `:*` suffix wildcards the port). **Set this when hosting:** FastMCP only auto-enables DNS-rebinding protection on a localhost bind, so `0.0.0.0` accepts any `Host` without it. |
 | `KS_ALLOWED_ORIGINS` | no | _(unset)_                           | Comma-separated `Origin` allowlist, used only alongside `KS_ALLOWED_HOSTS`. Leave unset to allow clients that send no `Origin` (most non-browser MCP clients). |
+| `KS_ALLOW_WRITE` | no     | _(unset → off)_                     | Set to `1`/`true`/`yes`/`on` to expose mutating tools, the same as `--allow-write`. Anything else — including a typo — leaves the server read-only. Each call additionally requires an admin-scoped key and is audit-logged. |
+| `KS_AUDIT_LOG` | no       | _(unset → stderr)_                  | Path for the write audit log (JSON Lines). Unset sends records to stderr. The directory is created on first write; if the sink cannot be written, mutating calls are **refused** rather than performed unrecorded. |
 
 ```bash
 export KS_API_KEY="sk-user-..."
@@ -152,6 +154,12 @@ uvx knowledgestack-mcp --http --host 0.0.0.0 --port 8765
 
 # verify key + connectivity, print the tool list, exit
 uvx knowledgestack-mcp --check
+
+# expose mutating tools (ingest / delete / reembed) — OFF by default.
+# Each call additionally requires an admin-scoped key and is audit-logged to
+# KS_AUDIT_LOG, or stderr if unset. Writes are refused if the audit sink
+# cannot be written. Combine with --check to see the surface it exposes.
+uvx knowledgestack-mcp --allow-write
 ```
 
 ## Client setup
@@ -465,8 +473,15 @@ Both transports speak the same tool surface.
 
 ## Security model
 
-- The server never logs `KS_API_KEY`, the `Authorization` header, or request bodies —
-  at any level, including `KS_LOG_LEVEL=DEBUG`.
+- The server never logs `KS_API_KEY` or the `Authorization` header — at any level,
+  including `KS_LOG_LEVEL=DEBUG`.
+- Tool arguments are never logged by the ordinary logger either. The **write audit
+  log** is the one deliberate exception, and only when writes are enabled: it records
+  the caller's user id, email and tenant, a hash of the arguments, and the values of
+  an allowlist of *identifier* arguments (`document_id`, `url`, `name`, …) — never
+  free text such as a question or document body. Those records go to `KS_AUDIT_LOG`
+  or stderr at a level the operator cannot turn down, because an audit trail a log
+  level can switch off is not one. Treat that sink as sensitive.
 - All tool responses are schema-validated via Pydantic before being returned to the client.
 - Tenant isolation is enforced **upstream** by the Knowledge Stack API; the server is a pass-through with no cross-tenant cache.
 - Report vulnerabilities privately via [SECURITY.md](SECURITY.md).

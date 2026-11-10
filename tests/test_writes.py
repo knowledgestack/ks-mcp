@@ -424,3 +424,53 @@ async def test_the_tool_call_is_unbound_after_the_call(ks: FakeKS, tmp_path) -> 
     await _invoke(mcp, "wipe_everything", {"document_id": "d1", "question": "q"})
 
     assert current_tool_call() is None
+
+
+async def test_an_operator_installed_audit_handler_survives(ks: FakeKS, tmp_path) -> None:
+    """A SIEM/syslog handler attached to `ks_mcp.audit` must not be removed.
+
+    An earlier version assigned `handlers = [ours]`, which silently dropped it
+    — and with `propagate = False` that left no route off the box at all, in
+    exactly the deployments that care most about auditing.
+    """
+    import logging
+
+    from ks_mcp.writes import audit_logger
+
+    captured: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record.getMessage())
+
+    operator_handler = Capture()
+    audit_logger.addHandler(operator_handler)
+    try:
+        ks.on(
+            "GET",
+            r"/v1/users/me",
+            json_body=current_user_payload() | {"current_tenant_role": "ADMIN"},
+        )
+        mcp, ran = _server_with_write_tool(WritePolicy(allow_write=True, audit_path=None))
+
+        await _invoke(mcp, "wipe_everything", {"document_id": "d1", "question": "q"})
+
+        assert ran == ["d1"]
+        assert operator_handler in audit_logger.handlers, "our handler replaced the operator's"
+        assert len(captured) == 2, f"operator handler saw {len(captured)} records, expected 2"
+    finally:
+        audit_logger.removeHandler(operator_handler)
+
+
+def test_the_audit_log_path_comes_from_the_environment(monkeypatch, tmp_path) -> None:
+    """`KS_AUDIT_LOG` had zero coverage, and it selects the only sink that
+    honours the fail-closed contract. Mutating it to `""` left all tests green.
+    """
+    monkeypatch.setenv("KS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    assert get_write_policy().audit_path == tmp_path / "audit.jsonl"
+
+    monkeypatch.delenv("KS_AUDIT_LOG", raising=False)
+    assert get_write_policy().audit_path is None, "unset must mean stderr, not a path"
+
+    monkeypatch.setenv("KS_AUDIT_LOG", "   ")
+    assert get_write_policy().audit_path is None, "whitespace must not become a path"

@@ -104,6 +104,13 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KS_API_KEY", "sk-user-test")
     monkeypatch.setenv("KS_BASE_URL", "http://localhost:8000")
     monkeypatch.delenv("KS_TIMEOUT_S", raising=False)
+    # Cleared, not just unset-by-default: a developer or CI runner with these
+    # exported would change what `build_server()` builds — writes enabled, and
+    # audit records going to their file instead of the sink under test. Once
+    # #8-#11 land it would also change what `scripts/export_schemas.py`
+    # publishes, so the drift would reach a committed artifact.
+    monkeypatch.delenv("KS_ALLOW_WRITE", raising=False)
+    monkeypatch.delenv("KS_AUDIT_LOG", raising=False)
 
 
 @pytest.fixture

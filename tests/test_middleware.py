@@ -433,23 +433,39 @@ async def test_a_tenant_supplied_by_the_resolver_is_honoured() -> None:
     assert seen == ["tenant-prefetched"]
 
 
-def test_rebuilding_the_ambient_client_does_not_strand_its_pool(
+async def test_a_superseded_ambient_client_is_actually_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`get_api_client` is sync so it cannot await aclose(); it must at least
-    drop the pool rather than leave it to a GC pass that may never run it."""
-    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
+    """Asserts `is_closed`, not a nulled attribute.
+
+    The first attempt at this nulled `rest_client.pool_manager` and asserted
+    *that*, which pinned a no-op: the pool stayed open (`is_closed` False) and
+    `ksapi.rest` would lazily build a second one at the SDK's 5s default,
+    losing KS_TIMEOUT_S. `get_api_client` is sync and cannot await, so the
+    superseded client is handed to `close_api_client`, which can.
+    """
+    from ks_mcp.client import (
+        _reset_ambient_client_for_tests,
+        _superseded_clients,
+        close_api_client,
+        get_api_client,
+    )
 
     _reset_ambient_client_for_tests()
     monkeypatch.setenv("KS_BASE_URL", "https://first.example.com")
     first = get_api_client()
-    assert first.rest_client.pool_manager is not None
+    pool = first.rest_client.pool_manager
+    assert pool is not None and not pool.is_closed
 
     monkeypatch.setenv("KS_BASE_URL", "https://second.example.com")
     second = get_api_client()
-
     assert second is not first
-    assert first.rest_client.pool_manager is None, "the superseded pool was stranded"
+    assert first in _superseded_clients, "the superseded client was dropped on the floor"
+
+    await close_api_client()
+
+    assert pool.is_closed, "the superseded connection pool was never closed"
+    assert not _superseded_clients
     _reset_ambient_client_for_tests()
 
 

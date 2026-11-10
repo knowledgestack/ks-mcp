@@ -255,15 +255,24 @@ class _CurrentStderrHandler(logging.StreamHandler):
 
 
 def _configure_audit_logger() -> None:
-    """Give the audit logger its own stderr handler, independent of KS_LOG_LEVEL."""
-    if any(isinstance(h, _CurrentStderrHandler) for h in audit_logger.handlers):
-        return
-    handler = _CurrentStderrHandler()
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    audit_logger.handlers = [handler]
-    audit_logger.setLevel(logging.INFO)
-    # Never propagate: the package logger's level must not be able to suppress
-    # an audit record, which is the bug this exists to prevent.
+    """Ensure the audit logger has a stderr sink, independent of KS_LOG_LEVEL.
+
+    Appends rather than replacing. An earlier version assigned
+    ``audit_logger.handlers = [handler]``, which silently removed any handler
+    an operator had attached to ``ks_mcp.audit`` — and since ``propagate`` is
+    False, that left no route to a SIEM or syslog at all. Shipping an audit log
+    whose only sinks are our stderr and our file would make it unusable in the
+    deployments that care most about auditing.
+    """
+    if not any(isinstance(h, _CurrentStderrHandler) for h in audit_logger.handlers):
+        handler = _CurrentStderrHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        audit_logger.addHandler(handler)
+    # INFO, not the package level: KS_LOG_LEVEL must not be able to suppress an
+    # audit record. Only raise the level if an operator has set it lower.
+    if audit_logger.level == logging.NOTSET or audit_logger.level > logging.INFO:
+        audit_logger.setLevel(logging.INFO)
+    # Never propagate to the package/root logger, whose level we do not control.
     audit_logger.propagate = False
 
 

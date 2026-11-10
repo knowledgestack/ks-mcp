@@ -179,3 +179,58 @@ def test_server_json_registry_type_is_pypi() -> None:
     """`mcp-publisher` resolves the package from PyPI, so this has to say so."""
     payload = json.loads((REPO_ROOT / "server.json").read_text(encoding="utf-8"))
     assert payload["packages"][0]["registryType"] == "pypi"
+
+
+# ---------------------------------------------------------------------------
+# operator-facing contract
+# ---------------------------------------------------------------------------
+
+
+def _documented_env_vars() -> set[str]:
+    """Every `KS_*` variable the code actually reads."""
+    import re
+
+    names: set[str] = set()
+    for path in (REPO_ROOT / "src" / "ks_mcp").rglob("*.py"):
+        names |= set(re.findall(r'os\.environ(?:\.get)?[(\[]"(KS_[A-Z_]+)"', path.read_text()))
+        names |= set(re.findall(r'_env\(\s*"(KS_[A-Z_]+)"', path.read_text()))
+        names |= set(re.findall(r'_env_flag\(\s*"(KS_[A-Z_]+)"', path.read_text()))
+        names |= set(re.findall(r'_csv_env\(\s*"(KS_[A-Z_]+)"', path.read_text()))
+    return names
+
+
+def test_every_env_var_the_code_reads_is_documented() -> None:
+    """A setting the code honours but the docs omit is a setting nobody uses.
+
+    `KS_ALLOW_WRITE` and `KS_AUDIT_LOG` shipped undocumented, and nothing
+    caught it — for a feature whose design is "the flag is the operator's
+    consent", the docs *are* the feature.
+    """
+    readme = (REPO_ROOT / "README.md").read_text()
+    undocumented = {name for name in _documented_env_vars() if f"`{name}`" not in readme}
+    assert not undocumented, f"env vars read by the code but absent from README: {undocumented}"
+
+
+def test_every_env_var_is_declared_in_the_registry_manifest() -> None:
+    """`server.json`'s environmentVariables is what the MCP registry and client
+    UIs read to offer configuration — an omission there is invisible to users."""
+    payload = json.loads((REPO_ROOT / "server.json").read_text(encoding="utf-8"))
+    declared = {e["name"] for e in payload["packages"][0]["environmentVariables"]}
+    missing = _documented_env_vars() - declared
+    assert not missing, f"env vars read by the code but absent from server.json: {missing}"
+
+
+def test_cli_flags_are_documented() -> None:
+    """Same reasoning for flags: `--allow-write` shipped only in a module docstring."""
+    readme = (REPO_ROOT / "README.md").read_text()
+    server_src = (REPO_ROOT / "src" / "ks_mcp" / "server.py").read_text()
+
+    import re
+
+    flags = set(re.findall(r'add_argument\(\s*"(--[a-z-]+)"', server_src))
+    flags -= {"--host", "--port", "--version"}  # unremarkable; not worth documenting
+    # Substring, not backticked: a flag shown in a runnable code block is
+    # documented. Requiring `--flag` inline would fail on `--check`, which the
+    # README demonstrates three times in exactly the way a reader wants.
+    undocumented = {f for f in flags if f not in readme}
+    assert not undocumented, f"CLI flags absent from README: {undocumented}"

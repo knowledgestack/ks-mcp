@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.knowledgestack/ks-mcp",
-  "description": "Knowledge Stack MCP server — semantic, keyword, and hybrid search, document reading, citations, schema-shaped extraction, image retrieval, and path browsing over a tenant-scoped knowledge base.",
+  "description": "Knowledge Stack MCP server \u2014 semantic, keyword, and hybrid search, document reading, citations, schema-shaped extraction, image retrieval, and path browsing over a tenant-scoped knowledge base.",
   "version": "0.3.0",
   "repository": {
     "url": "https://github.com/knowledgestack/ks-mcp",
@@ -19,7 +19,7 @@
       "environmentVariables": [
         {
           "name": "KS_API_KEY",
-          "description": "Knowledge Stack user API key (sk-user-…).",
+          "description": "Knowledge Stack user API key (sk-user-\u2026).",
           "isRequired": true,
           "isSecret": true
         },
@@ -46,6 +46,16 @@
         {
           "name": "KS_ALLOWED_ORIGINS",
           "description": "Comma-separated Origin header allowlist, used alongside KS_ALLOWED_HOSTS.",
+          "isRequired": false
+        },
+        {
+          "name": "KS_ALLOW_WRITE",
+          "description": "Set to 1/true to expose mutating tools (ingest/delete/reembed). Off by default; each call also requires an admin-scoped key and is audit-logged.",
+          "isRequired": false
+        },
+        {
+          "name": "KS_AUDIT_LOG",
+          "description": "Path for the write audit log (JSON Lines). Defaults to stderr. Only used when writes are enabled.",
           "isRequired": false
         }
       ]
