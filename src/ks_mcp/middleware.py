@@ -101,6 +101,19 @@ _credentials: ContextVar[RequestCredentials | None] = ContextVar(
 _request_client: ContextVar[Any | None] = ContextVar("ks_mcp_request_client", default=None)
 
 
+# The ToolCall for the in-flight invocation, so a tool body can reach its own
+# call without the framework threading it through. FastMCP passes a tool only
+# its declared arguments, so there is no other way for a tool to annotate its
+# own audit record. Set and read within one awaited chain in the same task, so
+# unlike credentials this needs no per-message machinery.
+_current_call: ContextVar["ToolCall | None"] = ContextVar("ks_mcp_current_call", default=None)
+
+
+def current_tool_call() -> "ToolCall | None":
+    """The ToolCall being handled, or None outside a tool call."""
+    return _current_call.get()
+
+
 def current_request_client() -> Any | None:
     """The ApiClient already built for this request, if any."""
     return _request_client.get()
@@ -295,6 +308,7 @@ class KnowledgeStackMCP(FastMCP):
             if result is not None:
                 await result
 
+        call_token = _current_call.set(call)
         try:
             return await super().call_tool(name, arguments)
         except BaseException as exc:
@@ -302,6 +316,7 @@ class KnowledgeStackMCP(FastMCP):
             call.error = exc
             raise
         finally:
+            _current_call.reset(call_token)
             call.duration_s = time.monotonic() - call.started_at
             for hook in reversed(self._after_hooks):
                 try:

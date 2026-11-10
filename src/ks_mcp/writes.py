@@ -58,7 +58,7 @@ from mcp import McpError
 from mcp.types import INVALID_PARAMS, ErrorData
 
 from ks_mcp.client import get_api_client, logger
-from ks_mcp.middleware import ToolCall
+from ks_mcp.middleware import ToolCall, current_tool_call
 
 # Roles that may call a mutating tool. `USER` may not, even with writes
 # enabled — the flag is the operator's consent, not the caller's authority.
@@ -285,15 +285,32 @@ def audit_outcome(policy: WritePolicy, call: ToolCall, identity: Identity | None
 # ---------------------------------------------------------------------------
 
 
-def report_workflow_id(call: ToolCall, workflow_id: str | None) -> None:
+def report_workflow_id(workflow_id: str | None) -> None:
     """Attach the upstream workflow id to this call's audit outcome record.
 
-    Write tools call this after the KS API returns. Separate function rather
-    than having tools poke ``call.state`` directly so the key name is in one
-    place and the audit log can't quietly lose the field to a typo.
+    Called from inside a write tool, right after the KS API returns::
+
+        resp = await DocumentsApi(client).ingest_document(...)
+        report_workflow_id(resp.workflow_id)
+
+    Takes no call argument on purpose. FastMCP hands a tool only its declared
+    arguments, so a tool has no reference to its own ``ToolCall`` — an earlier
+    signature took one explicitly and was therefore unusable by the very tools
+    it exists for (the test that "proved" it worked had smuggled the object out
+    through a hook). The in-flight call comes from the context instead.
+
+    A no-op outside a tool call, and for a synchronous write with no workflow,
+    so callers need no guard.
     """
-    if workflow_id:
-        call.state["workflow_id"] = workflow_id
+    if not workflow_id:
+        return
+    call = current_tool_call()
+    if call is None:
+        # Called outside a tool call — nothing to annotate. Not an error: a
+        # helper shared between a tool and a plain script would hit this.
+        logger.debug("report_workflow_id(%r) outside a tool call; ignored", workflow_id)
+        return
+    call.state["workflow_id"] = workflow_id
 
 
 def install_write_hooks(mcp: Any, policy: WritePolicy) -> None:

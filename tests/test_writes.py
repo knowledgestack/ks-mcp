@@ -325,18 +325,19 @@ async def test_audit_records_the_upstream_workflow_id_when_reported(
     ks.on("GET", r"/v1/users/me", json_body=current_user_payload() | {"current_tenant_role": "ADMIN"})
     audit = tmp_path / "audit.jsonl"
     mcp = KnowledgeStackMCP(name="test")
-    captured: list[ToolCall] = []
 
     @mcp.tool()
     async def async_write(document_id: str) -> str:
         """Mutating tool that kicks off a Temporal workflow."""
-        # What a real write tool does once the KS API returns.
-        writes.report_workflow_id(captured[0], "wf-abc-123")
+        # Exactly what a real write tool writes — no reference to its ToolCall,
+        # because FastMCP never gives a tool one. An earlier signature took the
+        # call explicitly and this test smuggled it out through a hook, which
+        # made an unusable API look proven.
+        writes.report_workflow_id("wf-abc-123")
         return "started"
 
     mark_write_tool("async_write")
     install_write_hooks(mcp, WritePolicy(allow_write=True, audit_path=audit))
-    mcp.add_hooks(before=lambda c: captured.append(c))
 
     await _invoke(mcp, "async_write", {"document_id": "d1"})
 
@@ -348,6 +349,32 @@ async def test_audit_records_the_upstream_workflow_id_when_reported(
 
 def test_report_workflow_id_ignores_none() -> None:
     """A synchronous write has no workflow id; the field must be absent, not null."""
+    from ks_mcp.middleware import _current_call
+
     call = ToolCall(name="x", arguments={})
-    writes.report_workflow_id(call, None)
+    token = _current_call.set(call)
+    try:
+        writes.report_workflow_id(None)
+    finally:
+        _current_call.reset(token)
     assert "workflow_id" not in call.state
+
+
+def test_report_workflow_id_outside_a_tool_call_is_a_noop() -> None:
+    """A helper shared between a tool and a script must not explode."""
+    from ks_mcp.middleware import current_tool_call
+
+    assert current_tool_call() is None
+    writes.report_workflow_id("wf-orphan")  # must not raise
+
+
+async def test_the_tool_call_is_unbound_after_the_call(ks: FakeKS, tmp_path) -> None:
+    """Otherwise a later write would annotate a previous call's audit record."""
+    from ks_mcp.middleware import current_tool_call
+
+    ks.on("GET", r"/v1/users/me", json_body=current_user_payload() | {"current_tenant_role": "ADMIN"})
+    mcp, _ = _server_with_write_tool(WritePolicy(allow_write=True, audit_path=tmp_path / "a.jsonl"))
+
+    await _invoke(mcp, "wipe_everything", {"document_id": "d1", "question": "q"})
+
+    assert current_tool_call() is None
