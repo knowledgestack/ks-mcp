@@ -284,10 +284,7 @@ class KnowledgeStackMCP(FastMCP):
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
     ) -> Sequence[ContentBlock] | dict[str, Any]:
-        resolved: RequestCredentials | None = None
-        if self._credentials_resolver is not None:
-            candidate = self._credentials_resolver(self._per_message_request())
-            resolved = await candidate if inspect.isawaitable(candidate) else candidate
+        resolved = await self._resolve_credentials()
         if resolved is None:
             return await self._call_tool_with_hooks(name, arguments)
         # Bound here, in the tool's own task, for this message only.
@@ -300,6 +297,39 @@ class KnowledgeStackMCP(FastMCP):
                 return await self._call_tool_with_hooks(name, arguments)
             finally:
                 await self._close_request_client()
+
+    async def read_resource(self, uri: Any) -> Any:
+        """Read a resource, under the caller's credentials.
+
+        Resource reads do **not** go through ``call_tool``, so without this
+        override they bypassed the credential binding entirely: in gateway mode
+        (#16) ``ks://document/...`` would have served document text under the
+        operator's ambient key rather than the caller's. Resources serve the
+        same corpus as the read tools, so they need the same binding.
+
+        Hooks deliberately do *not* run here. A ``ToolCall`` is the wrong shape
+        for a resource read, and #14/#15 are specified per *tool*; conflating
+        the two would make `tool` in a span or a rate-limit bucket mean two
+        different things. If resources ever need instrumenting, that wants its
+        own hook type.
+        """
+        resolved = await self._resolve_credentials()
+        if resolved is None:
+            return await super().read_resource(uri)
+        with request_credentials(resolved.api_key, resolved.base_url):
+            if resolved.tenant is not None:
+                set_resolved_tenant(resolved.tenant)
+            try:
+                return await super().read_resource(uri)
+            finally:
+                await self._close_request_client()
+
+    async def _resolve_credentials(self) -> "RequestCredentials | None":
+        """Run the resolver against the per-message request, if one is set."""
+        if self._credentials_resolver is None:
+            return None
+        candidate = self._credentials_resolver(self._per_message_request())
+        return await candidate if inspect.isawaitable(candidate) else candidate
 
     async def _close_request_client(self) -> None:
         """Close the ApiClient built for this request, if one was.

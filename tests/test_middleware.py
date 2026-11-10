@@ -555,18 +555,126 @@ def test_effective_credentials_follow_the_request(monkeypatch: pytest.MonkeyPatc
     assert get_effective_api_key() == "sk-user-process"
 
 
-def test_ask_streams_with_the_effective_credentials() -> None:
-    """Pins the call site, since the bug was a plain `get_api_key()` there."""
+async def test_ask_streams_with_the_callers_key_not_the_processs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observes the identity `ask` hands to its SSE stream.
+
+    First pinned by grepping ask.py for a token name, which proves only that a
+    string appears in a file. The bug was a cross-identity split, so the test
+    intercepts `_stream_answer` and asserts the key and host it is actually
+    given — the exact boundary that was wrong.
+    """
+    from ks_mcp.tools import ask as ask_module
+
+    captured: list[tuple[str, str]] = []
+
+    async def fake_stream(base_url, api_key, thread_id, timeout_s):
+        captured.append((base_url, api_key))
+        acc = ask_module._Accumulator(thread_id)
+        acc.parts.append("hi")
+        return acc, False
+
+    monkeypatch.setattr(ask_module, "_stream_answer", fake_stream)
+    monkeypatch.setenv("KS_API_KEY", "sk-user-PROCESS")
+    monkeypatch.setenv("KS_BASE_URL", "https://process.example.com")
+
+    # Drive the registered tool's own function, so the real argument wiring runs.
+    mcp = KnowledgeStackMCP(name="t")
+    ask_module.register(mcp)
+    tool = mcp._tool_manager.get_tool("ask")
+    assert tool is not None
+
+    async def fake_ensure(client, thread_id, question):
+        import uuid
+
+        return uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+
+    async def fake_send(client, thread, question, output_language):
+        return "wf-1"
+
+    async def fake_fetch(client, thread, message_id):
+        return None, [], False
+
+    monkeypatch.setattr(ask_module, "_ensure_thread", fake_ensure)
+    monkeypatch.setattr(ask_module, "_send_user_message", fake_send)
+    monkeypatch.setattr(ask_module, "_fetch_enriched", fake_fetch)
+
+    with request_credentials("sk-user-CALLER", "https://caller.example.com"):
+        await tool.fn(question="hello")
+
+    assert captured == [("https://caller.example.com", "sk-user-CALLER")], (
+        f"ask streamed with {captured}, not the caller's credentials"
+    )
+
+
+def test_ask_does_not_read_credentials_from_the_environment() -> None:
+    """Complements the behavioural test above: the env readers must not come
+    back to this module, since the slip was a single token."""
     import inspect
 
     from ks_mcp.tools import ask
 
     source = inspect.getsource(ask)
-    assert "get_effective_api_key()" in source
-    assert "get_effective_base_url()" in source
-    # The env readers must not be reachable from the streaming path again.
     assert "get_api_key()" not in source
     assert "get_base_url()" not in source
+
+
+async def test_per_message_request_is_none_without_a_request() -> None:
+    """`_per_message_request` is the mechanism #16's resolver depends on.
+
+    It had no test at all: mutating it to return None unconditionally broke
+    nothing, which would have silently disabled every gateway deployment.
+    """
+    mcp, _ = _server_with_ping()
+    assert mcp._per_message_request() is None
+
+
+async def test_per_message_request_is_reachable_during_a_call() -> None:
+    """Inside a call the low-level server has set `request_ctx`, so the
+    accessor must not raise — returning None under stdio is correct, raising
+    is not."""
+    mcp, _ = _server_with_ping()
+    observed: list[object] = []
+
+    def resolver(request):
+        observed.append(("called", request))
+        return None
+
+    mcp.set_credentials_resolver(resolver)
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert len(observed) == 1, "the resolver was never handed the per-message request"
+
+
+async def test_resource_reads_bind_the_callers_credentials() -> None:
+    """Resource reads bypass `call_tool`, so they needed their own binding.
+
+    Without it, `ks://document/...` served document text under the operator's
+    ambient key in gateway mode — the same bleed as tools, by a path nobody
+    was looking at.
+    """
+    from ks_mcp.server import build_server
+
+    seen: list[str | None] = []
+    mcp = build_server()
+
+    @mcp.resource("ks-test://probe")
+    async def probe() -> str:
+        """Records whose credentials are bound during a resource read."""
+        creds = current_credentials()
+        seen.append(creds.api_key if creds else None)
+        return "ok"
+
+    mcp.set_credentials_resolver(
+        lambda request: RequestCredentials(api_key="sk-user-CALLER", base_url="https://x.example.com")
+    )
+
+    await mcp.read_resource("ks-test://probe")
+
+    assert seen == ["sk-user-CALLER"], f"resource read saw {seen}, not the caller's key"
+    assert current_credentials() is None, "credentials leaked past the resource read"
 
 
 async def test_an_already_entered_hook_is_unwound_when_a_later_one_refuses() -> None:

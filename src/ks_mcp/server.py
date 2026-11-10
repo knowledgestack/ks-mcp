@@ -188,8 +188,14 @@ def build_server(
     return mcp
 
 
-async def _run_check() -> int:
-    """Validate the env + key against the live API and print a human summary."""
+async def _run_check(policy: WritePolicy | None = None) -> int:
+    """Validate the env + key against the live API and print a human summary.
+
+    Takes the policy so ``--check --allow-write`` reports the surface the
+    server would actually expose. Without it the doctor built a default-policy
+    server and listed the read-only surface, which is the opposite of
+    reassuring when you are verifying that writes are on.
+    """
     from ks_mcp.client import close_api_client
     from ks_mcp.tools.org import _fetch_tenant
 
@@ -209,7 +215,7 @@ async def _run_check() -> int:
     finally:
         await close_api_client()
 
-    tools = await build_server().list_tools()
+    tools = await build_server(policy=policy).list_tools()
     print(f"OK: authenticated to tenant {info.name!r} ({info.tenant_id})")
     print(f"    language={info.default_language} timezone={info.timezone}")
     print(f"    {len(tools)} tools registered: {', '.join(sorted(t.name for t in tools))}")
@@ -270,14 +276,12 @@ def main() -> None:
 
     configure_logging()
 
-    if args.check:
-        raise SystemExit(asyncio.run(_run_check()))
+    policy = get_write_policy(allow_write=args.allow_write)
 
-    mcp = build_server(
-        host=args.host,
-        port=args.port,
-        policy=get_write_policy(allow_write=args.allow_write),
-    )
+    if args.check:
+        raise SystemExit(asyncio.run(_run_check(policy)))
+
+    mcp = build_server(host=args.host, port=args.port, policy=policy)
     if args.http:
         _warn_if_unprotected(args.host)
         mcp.run(transport="streamable-http")
