@@ -48,7 +48,9 @@ an answer anyone can use during an incident.
 
 import hashlib
 import json
+import logging
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +61,12 @@ from mcp.types import INVALID_PARAMS, ErrorData
 
 from ks_mcp.client import get_api_client, logger
 from ks_mcp.middleware import ToolCall, current_tool_call
+
+# The audit log gets its own logger, deliberately not the package logger.
+# Routing it through `ks_mcp` meant `KS_LOG_LEVEL=ERROR` — an ordinary
+# production setting — silently discarded every audit record while writes
+# carried on. An audit trail that a log level can switch off is not one.
+audit_logger = logging.getLogger("ks_mcp.audit")
 
 # Roles that may call a mutating tool. `USER` may not, even with writes
 # enabled — the flag is the operator's consent, not the caller's authority.
@@ -221,12 +229,26 @@ def _safe_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in arguments.items() if k in AUDITABLE_ARG_NAMES}
 
 
+def _configure_audit_logger() -> None:
+    """Give the audit logger its own stderr handler, independent of KS_LOG_LEVEL."""
+    if audit_logger.handlers:
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    audit_logger.handlers = [handler]
+    audit_logger.setLevel(logging.INFO)
+    # Never propagate: the package logger's level must not be able to suppress
+    # an audit record, which is the bug this exists to prevent.
+    audit_logger.propagate = False
+
+
 def _emit(policy: WritePolicy, record: dict[str, Any]) -> None:
     """Append one JSON record to the sink. Raises if the sink is unusable."""
     line = json.dumps(record, sort_keys=True, default=str, ensure_ascii=False)
     if policy.audit_path is None:
         # stderr, never stdout: stdout is the stdio transport's frame channel.
-        logger.warning("ks-mcp-audit %s", line)
+        _configure_audit_logger()
+        audit_logger.info("ks-mcp-audit %s", line)
         return
     policy.audit_path.parent.mkdir(parents=True, exist_ok=True)
     with policy.audit_path.open("a", encoding="utf-8") as handle:

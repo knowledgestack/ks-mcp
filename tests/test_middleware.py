@@ -13,6 +13,7 @@ Both have the same failure signature — everything passes, nothing works.
 
 import asyncio
 import dataclasses
+from typing import Any
 
 import pytest
 from mcp import types
@@ -34,14 +35,21 @@ def _call_request(name: str, arguments: dict) -> types.CallToolRequest:
     )
 
 
-async def _invoke_via_low_level(mcp: FastMCP, name: str, arguments: dict) -> None:
-    """Drive a tool the way a real MCP client does.
+async def _invoke_via_low_level(
+    mcp: FastMCP, name: str, arguments: dict
+) -> types.CallToolResult:
+    """Drive a tool the way a real MCP client does, returning the result.
 
     Deliberately *not* `mcp.call_tool(...)`: that is the shortcut that makes a
-    broken interception point look like a working one.
+    broken interception point look like a working one. The result is returned
+    so tests can assert on `isError`, not merely on side effects — asserting
+    only side effects is what made two tests here pass against broken code.
     """
     handler = mcp._mcp_server.request_handlers[types.CallToolRequest]
-    await handler(_call_request(name, arguments))
+    response = await handler(_call_request(name, arguments))
+    result = response.root
+    assert isinstance(result, types.CallToolResult), f"unexpected result type: {type(result)}"
+    return result
 
 
 def _server_with_ping() -> tuple[KnowledgeStackMCP, list[str]]:
@@ -154,7 +162,12 @@ async def test_before_hook_can_refuse_a_call() -> None:
 
 
 async def test_a_broken_after_hook_does_not_break_the_tool() -> None:
-    """Observability must not be able to fail a working call."""
+    """Observability must not be able to fail a working call.
+
+    Was a false green: it asserted only that the tool *body* ran, which it does
+    before the hook raises. With the protection removed the test still passed.
+    Now it asserts the client sees a successful result.
+    """
     mcp, seen = _server_with_ping()
 
     def explode(call) -> None:
@@ -162,9 +175,12 @@ async def test_a_broken_after_hook_does_not_break_the_tool() -> None:
 
     mcp.add_hooks(after=explode)
 
-    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+    result = await _invoke_via_low_level(mcp, "ping", {"value": 1})
 
     assert seen == ["tool-ran"]
+    assert result.isError is False, (
+        f"a broken after-hook turned a working call into an error: {result.content}"
+    )
 
 
 async def test_hooks_nest_outermost_first() -> None:
@@ -404,7 +420,7 @@ async def test_the_request_scoped_client_is_closed_after_the_call() -> None:
     from ks_mcp.middleware import current_request_client
 
     mcp = KnowledgeStackMCP(name="test")
-    captured: list[object] = []
+    captured: list[Any] = []
 
     @mcp.tool()
     async def uses_client() -> str:
@@ -424,6 +440,15 @@ async def test_the_request_scoped_client_is_closed_after_the_call() -> None:
 
     assert captured[0] is captured[1], "a second get_api_client() built another client"
     assert current_request_client() is None, "the request client was not released"
+    # Was a false green: clearing the contextvar happens whether or not the
+    # client is actually closed, so the test passed with the close removed.
+    # `ApiClient.close()` -> `rest_client.close()` -> `pool_manager.aclose()`,
+    # and httpx sets `is_closed`, so that is the real observable.
+    pool = captured[0].rest_client.pool_manager
+    assert pool is not None and pool.is_closed, (
+        "the request-scoped client was released but its connection pool was "
+        "never closed — this leaks a pool and an ssl_context per call"
+    )
 
 
 def test_request_scoped_clients_are_not_shared_across_tenants() -> None:

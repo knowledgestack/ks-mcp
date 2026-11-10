@@ -105,7 +105,22 @@ async def test_no_write_tools_are_registered_by_default(
 
     monkeypatch.delenv("KS_ALLOW_WRITE", raising=False)
     tools = {t.name for t in await build_server().list_tools()}
-    assert not (tools & writes.write_tool_names())
+
+    # Was vacuous: `write_tool_names()` is empty until a write tool registers,
+    # so intersecting against it passed no matter what the server exposed.
+    # Assert against the actual names #8-#11/#26 will use instead.
+    planned = {
+        "ingest_document",
+        "ingest_url",
+        "delete_document",
+        "delete_folder",
+        "reembed",
+        "run_document_workflow",
+    }
+    assert not (tools & planned), f"mutating tools exposed with writes off: {tools & planned}"
+    # And nothing that merely *looks* mutating slipped in either.
+    suspicious = {t for t in tools if t.split("_")[0] in {"delete", "ingest", "create", "update", "reembed"}}
+    assert not suspicious, f"unexpected mutating-looking tools: {suspicious}"
 
 
 async def test_enabling_writes_does_not_by_itself_add_tools(
@@ -298,13 +313,44 @@ def test_outcome_audit_is_fail_open(tmp_path) -> None:
     writes.audit_outcome(policy, call, None)  # must not raise
 
 
-async def test_audit_falls_back_to_stderr_without_a_path(ks: FakeKS, caplog) -> None:
+async def test_audit_falls_back_to_stderr_without_a_path(ks: FakeKS, capsys) -> None:
+    """Was a no-op: it took `caplog` and asserted nothing about it, so it only
+    proved the tool ran. Now it asserts the record actually reaches stderr."""
     ks.on("GET", r"/v1/users/me", json_body=current_user_payload() | {"current_tenant_role": "ADMIN"})
     mcp, ran = _server_with_write_tool(WritePolicy(allow_write=True, audit_path=None))
 
     await _invoke(mcp, "wipe_everything", {"document_id": "d1", "question": "q"})
 
     assert ran == ["d1"]
+    err = capsys.readouterr().err
+    assert "ks-mcp-audit" in err, "no audit record reached stderr"
+    assert '"event": "intent"' in err and '"event": "outcome"' in err
+    # stdout is the stdio transport's frame channel; writing there corrupts MCP.
+    assert "ks-mcp-audit" not in capsys.readouterr().out
+
+
+async def test_audit_survives_a_quiet_log_level(ks: FakeKS, capsys, monkeypatch) -> None:
+    """An audit trail a log level can switch off is not an audit trail.
+
+    The default sink used the package logger, so `KS_LOG_LEVEL=ERROR` — an
+    ordinary production setting — discarded every record while writes carried
+    on. It now has its own logger at INFO with `propagate = False`.
+    """
+    import logging
+
+    from ks_mcp.client import logger as package_logger
+
+    monkeypatch.setenv("KS_LOG_LEVEL", "ERROR")
+    package_logger.setLevel(logging.ERROR)
+    ks.on("GET", r"/v1/users/me", json_body=current_user_payload() | {"current_tenant_role": "ADMIN"})
+    mcp, ran = _server_with_write_tool(WritePolicy(allow_write=True, audit_path=None))
+
+    await _invoke(mcp, "wipe_everything", {"document_id": "d1", "question": "q"})
+
+    assert ran == ["d1"]
+    assert "ks-mcp-audit" in capsys.readouterr().err, (
+        "KS_LOG_LEVEL silenced the audit log"
+    )
 
 
 def test_policy_reports_its_audit_target(tmp_path) -> None:
