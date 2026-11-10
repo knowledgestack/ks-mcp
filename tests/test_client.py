@@ -17,9 +17,9 @@ def test_env_raises_for_missing_required(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_get_api_client_sets_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ks_mcp.client import get_api_client
+    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
 
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
     monkeypatch.setenv("KS_API_KEY", "sk-user-custom")
     monkeypatch.setenv("KS_BASE_URL", "https://api.example.com")
 
@@ -28,7 +28,7 @@ def test_get_api_client_sets_auth_header(monkeypatch: pytest.MonkeyPatch) -> Non
     assert client.configuration.host == "https://api.example.com"
     assert client.default_headers["Authorization"] == "Bearer sk-user-custom"
 
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
 
 
 def test_get_api_client_applies_ks_timeout_to_the_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,24 +37,28 @@ def test_get_api_client_applies_ks_timeout_to_the_sdk(monkeypatch: pytest.Monkey
     `ksapi.Configuration` has no timeout field and the SDK's lazily-built
     httpx2 client defaults to 5s, which is too tight for KS search.
     """
-    from ks_mcp.client import get_api_client
+    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
 
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
     monkeypatch.setenv("KS_TIMEOUT_S", "42")
 
     client = get_api_client()
 
     assert client.rest_client.pool_manager is not None
     assert client.rest_client.pool_manager.timeout.read == 42.0
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
 
 
 def test_get_api_client_defaults_timeout_above_sdk_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ks_mcp.client import DEFAULT_TIMEOUT_S, get_api_client
+    from ks_mcp.client import (
+        DEFAULT_TIMEOUT_S,
+        _reset_ambient_client_for_tests,
+        get_api_client,
+    )
 
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
     monkeypatch.delenv("KS_TIMEOUT_S", raising=False)
 
     pool_manager = get_api_client().rest_client.pool_manager
@@ -63,19 +67,43 @@ def test_get_api_client_defaults_timeout_above_sdk_default(
     assert read_timeout == DEFAULT_TIMEOUT_S
     assert read_timeout is not None
     assert read_timeout > 5.0  # the ksapi/httpx2 default we override
-    get_api_client.cache_clear()
+    _reset_ambient_client_for_tests()
 
 
-def test_get_api_client_is_cached() -> None:
-    from ks_mcp.client import get_api_client
+def test_get_api_client_pools_the_ambient_client() -> None:
+    """With no request credentials bound, one pooled client per process.
 
-    get_api_client.cache_clear()
-    client_a = get_api_client()
-    client_b = get_api_client()
+    Pooling avoids re-doing the TLS handshake on every tool call, which is why
+    this is worth asserting rather than leaving to chance.
+    """
+    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
 
-    assert client_a is client_b
+    _reset_ambient_client_for_tests()
+    assert get_api_client() is get_api_client()
+    _reset_ambient_client_for_tests()
 
-    get_api_client.cache_clear()
+
+def test_ambient_client_is_rebuilt_when_the_environment_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pooled client must not outlive the host it was built for.
+
+    The old `@lru_cache(maxsize=1)` keyed on nothing, so a test (or a reload)
+    that changed KS_BASE_URL kept talking to the previous host and the failure
+    looked like network flakiness.
+    """
+    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
+
+    _reset_ambient_client_for_tests()
+    monkeypatch.setenv("KS_BASE_URL", "https://first.example.com")
+    first = get_api_client()
+
+    monkeypatch.setenv("KS_BASE_URL", "https://second.example.com")
+    second = get_api_client()
+
+    assert first is not second
+    assert second.configuration.host == "https://second.example.com"
+    _reset_ambient_client_for_tests()
 
 
 def test_get_timeout_s_defaults_to_30(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,12 +197,13 @@ def test_ks_log_level_reaches_fastmcp(monkeypatch: pytest.MonkeyPatch) -> None:
     assert build_server().settings.log_level == "WARNING"
 
 
-async def test_close_api_client_clears_cache() -> None:
+async def test_close_api_client_drops_the_pooled_client() -> None:
+    from ks_mcp import client as client_module
     from ks_mcp.client import close_api_client, get_api_client
 
-    get_api_client.cache_clear()
+    client_module._reset_ambient_client_for_tests()
     get_api_client()
-    assert get_api_client.cache_info().currsize == 1
+    assert client_module._ambient_client is not None
 
     await close_api_client()
-    assert get_api_client.cache_info().currsize == 0
+    assert client_module._ambient_client is None

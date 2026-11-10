@@ -22,6 +22,10 @@ Environment:
                                   DNS-rebinding protection entirely.
     KS_ALLOWED_ORIGINS (optional) Comma-separated Origin allowlist, used only
                                   alongside KS_ALLOWED_HOSTS.
+    KS_ALLOW_WRITE     (optional) Set to 1/true to expose mutating tools, the
+                                  same as passing --allow-write.
+    KS_AUDIT_LOG       (optional) Path for the write audit log (JSON lines).
+                                  Defaults to stderr.
 """
 
 import argparse
@@ -43,7 +47,9 @@ from ks_mcp.client import (
     get_log_level,
     logger,
 )
+from ks_mcp.middleware import KnowledgeStackMCP
 from ks_mcp.tools import ask, browse, cite, extract, org, provenance, read, search, workflows
+from ks_mcp.writes import WritePolicy, get_write_policy, install_write_hooks
 
 INSTRUCTIONS = (
     "Knowledge Stack: ground every answer in the tenant's knowledge base.\n"
@@ -122,8 +128,16 @@ def _transport_security() -> TransportSecuritySettings | None:
     )
 
 
-def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
-    mcp = FastMCP(
+def build_server(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    policy: WritePolicy | None = None,
+) -> KnowledgeStackMCP:
+    # KnowledgeStackMCP, not FastMCP: it overrides `call_tool` to give every
+    # tool call one interception point (see middleware.py). It must be the
+    # class we *construct* — FastMCP binds `self.call_tool` during __init__, so
+    # patching the attribute afterwards would never reach real traffic.
+    mcp = KnowledgeStackMCP(
         name="knowledgestack",
         instructions=INSTRUCTIONS,
         host=host,
@@ -143,6 +157,22 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     # registered; a client that ignores prompts/ simply never lists them.
     prompts.register(mcp)
     resources.register(mcp)
+
+    # Mutating tools are registered only when writes are enabled, so they are
+    # absent from `tools/list` otherwise — a tool an agent cannot see is one it
+    # cannot be talked into calling by an injected document. The hooks go on
+    # unconditionally so enabling writes can't enable them ungated.
+    write_policy = policy if policy is not None else get_write_policy()
+    install_write_hooks(mcp, write_policy)
+    if write_policy.allow_write:
+        logger.warning(
+            "Writes are ENABLED (--allow-write / KS_ALLOW_WRITE). Mutating tools "
+            "require an admin-scoped key and every call is audit-logged to %s.",
+            write_policy.audit_target,
+        )
+        # No write tools exist yet; #8-#11 and #26 register here, each calling
+        # writes.mark_write_tool(...) so the gate and audit log cover them.
+
     _normalize_tool_descriptions(mcp)
 
     # The MCP endpoint itself can't serve as a health check: `GET /mcp` returns
@@ -158,8 +188,14 @@ def build_server(host: str = "127.0.0.1", port: int = 8765) -> FastMCP:
     return mcp
 
 
-async def _run_check() -> int:
-    """Validate the env + key against the live API and print a human summary."""
+async def _run_check(policy: WritePolicy | None = None) -> int:
+    """Validate the env + key against the live API and print a human summary.
+
+    Takes the policy so ``--check --allow-write`` reports the surface the
+    server would actually expose. Without it the doctor built a default-policy
+    server and listed the read-only surface, which is the opposite of
+    reassuring when you are verifying that writes are on.
+    """
     from ks_mcp.client import close_api_client
     from ks_mcp.tools.org import _fetch_tenant
 
@@ -179,7 +215,7 @@ async def _run_check() -> int:
     finally:
         await close_api_client()
 
-    tools = await build_server().list_tools()
+    tools = await build_server(policy=policy).list_tools()
     print(f"OK: authenticated to tenant {info.name!r} ({info.tenant_id})")
     print(f"    language={info.default_language} timezone={info.timezone}")
     print(f"    {len(tools)} tools registered: {', '.join(sorted(t.name for t in tools))}")
@@ -226,15 +262,26 @@ def main() -> None:
         action="store_true",
         help="Verify KS_API_KEY and connectivity, print the tool list, then exit.",
     )
+    parser.add_argument(
+        "--allow-write",
+        action="store_true",
+        help=(
+            "Expose mutating tools (ingest / delete / reembed). Off by default. "
+            "Each call additionally requires an admin-scoped key and is "
+            "audit-logged to KS_AUDIT_LOG, or stderr if unset."
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"ks-mcp {__version__}")
     args = parser.parse_args()
 
     configure_logging()
 
-    if args.check:
-        raise SystemExit(asyncio.run(_run_check()))
+    policy = get_write_policy(allow_write=args.allow_write)
 
-    mcp = build_server(host=args.host, port=args.port)
+    if args.check:
+        raise SystemExit(asyncio.run(_run_check(policy)))
+
+    mcp = build_server(host=args.host, port=args.port, policy=policy)
     if args.http:
         _warn_if_unprotected(args.host)
         mcp.run(transport="streamable-http")

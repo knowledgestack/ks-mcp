@@ -77,3 +77,12 @@ keys are [#16](https://github.com/knowledgestack/ks-mcp/issues/16)). The key
 in the environment is the tenant's full read scope. Put it behind your own
 authenticating proxy, a private network, or an allowlist before putting it on
 the public internet.
+
+**If you set `--allow-write` / `KS_ALLOW_WRITE`, that becomes the tenant's full
+*write* scope**, and anyone who can reach `/mcp` has it. The admin-scope check on
+each mutating call resolves the *key* presented, and over HTTP today there is no
+per-caller identity — so it resolves the process key and passes for every
+anonymous caller whenever that key is admin, which it must be for writes to work
+at all. Per-caller authorization arrives with #16. Until then, treat writes as
+"anyone who can reach this port can mutate the corpus", and note that audit
+records will all carry the operator's identity with `request_scoped: false`.

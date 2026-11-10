@@ -104,12 +104,19 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KS_API_KEY", "sk-user-test")
     monkeypatch.setenv("KS_BASE_URL", "http://localhost:8000")
     monkeypatch.delenv("KS_TIMEOUT_S", raising=False)
+    # Cleared, not just unset-by-default: a developer or CI runner with these
+    # exported would change what `build_server()` builds — writes enabled, and
+    # audit records going to their file instead of the sink under test. Once
+    # #8-#11 land it would also change what `scripts/export_schemas.py`
+    # publishes, so the drift would reach a committed artifact.
+    monkeypatch.delenv("KS_ALLOW_WRITE", raising=False)
+    monkeypatch.delenv("KS_AUDIT_LOG", raising=False)
 
 
 @pytest.fixture
 def ks(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeKS]:
     """Run a local KS stand-in and point the SDK client at it."""
-    from ks_mcp.client import get_api_client
+    from ks_mcp.client import _reset_ambient_client_for_tests
     from ks_mcp.tools import org
 
     state: dict[str, FakeKS] = {}
@@ -164,13 +171,13 @@ def ks(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeKS]:
     fake = FakeKS(base_url=f"http://127.0.0.1:{port}")
     state["fake"] = fake
     monkeypatch.setenv("KS_BASE_URL", fake.base_url)
-    get_api_client.cache_clear()
-    org._cached_tenant = None
+    _reset_ambient_client_for_tests()
+    org._ambient_tenant = None
     try:
         yield fake
     finally:
-        get_api_client.cache_clear()
-        org._cached_tenant = None
+        _reset_ambient_client_for_tests()
+        org._ambient_tenant = None
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
