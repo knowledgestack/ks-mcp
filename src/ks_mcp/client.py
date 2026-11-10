@@ -216,6 +216,14 @@ def get_api_client() -> ksapi.ApiClient:
     # KS_BASE_URL between cases, and silently serving a stale host made those
     # failures look like network flakes.
     if _ambient_client is None or _ambient_identity != identity:
+        if _ambient_client is not None:
+            # The outgoing client owns an httpx connection pool. `get_api_client`
+            # is sync so it cannot await `aclose()`; drop the pool explicitly
+            # rather than stranding it until GC, which may never run it.
+            stranded = _ambient_client.rest_client.pool_manager
+            if stranded is not None:
+                _ambient_client.rest_client.pool_manager = None
+                logger.debug("dropped the pool of the superseded ambient KS client")
         _ambient_client = _build_api_client(*identity)
         _ambient_identity = identity
     return _ambient_client

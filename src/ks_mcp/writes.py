@@ -229,11 +229,36 @@ def _safe_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in arguments.items() if k in AUDITABLE_ARG_NAMES}
 
 
+class _CurrentStderrHandler(logging.StreamHandler):
+    """A StreamHandler that resolves ``sys.stderr`` at emit time.
+
+    ``logging.StreamHandler(sys.stderr)`` captures the stream object at
+    construction. Since the handler is installed once and reused, anything that
+    later replaces ``sys.stderr`` — a test harness, a supervisor, a library
+    that redirects output — would send every subsequent audit record to the
+    *old* stream, i.e. nowhere visible. Resolving per record keeps the audit
+    log pointed at whatever stderr currently is.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @property
+    def stream(self):  # type: ignore[override]
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, _value) -> None:
+        # StreamHandler.__init__ assigns to this; the property is the source of
+        # truth, so the assignment is deliberately ignored.
+        pass
+
+
 def _configure_audit_logger() -> None:
     """Give the audit logger its own stderr handler, independent of KS_LOG_LEVEL."""
-    if audit_logger.handlers:
+    if any(isinstance(h, _CurrentStderrHandler) for h in audit_logger.handlers):
         return
-    handler = logging.StreamHandler(sys.stderr)
+    handler = _CurrentStderrHandler()
     handler.setFormatter(logging.Formatter("%(message)s"))
     audit_logger.handlers = [handler]
     audit_logger.setLevel(logging.INFO)

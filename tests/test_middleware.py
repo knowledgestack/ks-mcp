@@ -392,6 +392,67 @@ async def test_resolver_binds_credentials_per_call() -> None:
     )
 
 
+async def test_an_async_resolver_is_awaited() -> None:
+    """A gateway resolving a key to a tenant needs a lookup, so the resolver
+    must be allowed to be async rather than forced onto a thread or a cache."""
+    mcp, _ = _server_with_ping()
+    observed: list[str | None] = []
+    mcp.add_hooks(
+        before=lambda c: observed.append(c.credentials.api_key if c.credentials else None)
+    )
+
+    async def resolver(request):
+        await asyncio.sleep(0)
+        return RequestCredentials(api_key="sk-user-async", base_url="https://a.example.com")
+
+    mcp.set_credentials_resolver(resolver)
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert observed == ["sk-user-async"]
+
+
+async def test_a_tenant_supplied_by_the_resolver_is_honoured() -> None:
+    """Otherwise org.py repeats a lookup the gateway already did."""
+    mcp, _ = _server_with_ping()
+    seen: list[object] = []
+
+    def capture(call) -> None:
+        creds = current_credentials()
+        seen.append(creds.tenant if creds else None)
+
+    mcp.add_hooks(before=capture)
+    mcp.set_credentials_resolver(
+        lambda request: RequestCredentials(
+            api_key="sk-user-x", base_url="https://x.example.com", tenant="tenant-prefetched"
+        )
+    )
+
+    await _invoke_via_low_level(mcp, "ping", {"value": 1})
+
+    assert seen == ["tenant-prefetched"]
+
+
+def test_rebuilding_the_ambient_client_does_not_strand_its_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_api_client` is sync so it cannot await aclose(); it must at least
+    drop the pool rather than leave it to a GC pass that may never run it."""
+    from ks_mcp.client import _reset_ambient_client_for_tests, get_api_client
+
+    _reset_ambient_client_for_tests()
+    monkeypatch.setenv("KS_BASE_URL", "https://first.example.com")
+    first = get_api_client()
+    assert first.rest_client.pool_manager is not None
+
+    monkeypatch.setenv("KS_BASE_URL", "https://second.example.com")
+    second = get_api_client()
+
+    assert second is not first
+    assert first.rest_client.pool_manager is None, "the superseded pool was stranded"
+    _reset_ambient_client_for_tests()
+
+
 async def test_credentials_are_unbound_again_after_the_call() -> None:
     mcp, _ = _server_with_ping()
     mcp.set_credentials_resolver(

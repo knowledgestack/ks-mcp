@@ -56,6 +56,7 @@ without one, ``client.py`` falls back to the environment, which is exactly
 today's single-tenant behaviour.
 """
 
+import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import contextmanager
@@ -200,8 +201,13 @@ class ToolCall:
 # raising an McpError, which already maps to a proper MCP error response.
 BeforeHook = Callable[[ToolCall], None | Awaitable[None]]
 AfterHook = Callable[[ToolCall], None | Awaitable[None]]
-# Receives the per-message request (or None under stdio).
-CredentialsResolver = Callable[[Any | None], "RequestCredentials | None"]
+# Receives the per-message request (or None under stdio). May be async: a
+# gateway resolving a key to a tenant will usually need a lookup, and forcing
+# that to be synchronous would push it onto a thread or a cache the operator
+# cannot invalidate.
+CredentialsResolver = Callable[
+    [Any | None], "RequestCredentials | None | Awaitable[RequestCredentials | None]"
+]
 
 
 class KnowledgeStackMCP(FastMCP):
@@ -278,13 +284,18 @@ class KnowledgeStackMCP(FastMCP):
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
     ) -> Sequence[ContentBlock] | dict[str, Any]:
-        resolved = None
+        resolved: RequestCredentials | None = None
         if self._credentials_resolver is not None:
-            resolved = self._credentials_resolver(self._per_message_request())
+            candidate = self._credentials_resolver(self._per_message_request())
+            resolved = await candidate if inspect.isawaitable(candidate) else candidate
         if resolved is None:
             return await self._call_tool_with_hooks(name, arguments)
         # Bound here, in the tool's own task, for this message only.
         with request_credentials(resolved.api_key, resolved.base_url):
+            if resolved.tenant is not None:
+                # A resolver that already knows the tenant saves `org.py` a
+                # round trip; discarding it would make the lookup happen twice.
+                set_resolved_tenant(resolved.tenant)
             try:
                 return await self._call_tool_with_hooks(name, arguments)
             finally:
