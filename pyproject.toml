@@ -24,7 +24,7 @@ dependencies = [
     # Matches mcp's own floor (>=0.27) rather than pinning tighter than it does.
     "starlette>=0.27",
     "pydantic>=2.6,<3",
-    "ksapi>=3.26.4,<4",
+    "ksapi>=3.30.1",
 ]
 
 [project.optional-dependencies]
